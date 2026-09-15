@@ -1,0 +1,120 @@
+import express from 'express'
+import { existsSync } from 'node:fs'
+import path from 'node:path'
+import './db'
+import * as steam from './steam'
+import { comparePrices } from './price'
+import { listItems } from './db'
+
+const app = express()
+app.use(express.json())
+
+app.get('/api/health', (_req, res) => {
+  res.json({ ok: true, version: '0.1.0' })
+})
+
+app.get('/api/auth/status', (_req, res) => {
+  res.json(steam.authStatus())
+})
+
+app.post('/api/auth/login', async (req, res) => {
+  const { accountName, password, twoFactorCode } = req.body as { accountName?: string; password?: string; twoFactorCode?: string }
+  if (!accountName || !password) {
+    res.status(400).json({ error: 'accountName and password are required' })
+    return
+  }
+  try {
+    res.json(await steam.login(accountName, password, twoFactorCode))
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/auth/logout', (_req, res) => {
+  res.json(steam.logout())
+})
+
+app.get('/api/inventory', async (_req, res) => {
+  try {
+    res.json(await steam.getInventory())
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message })
+  }
+})
+
+app.get('/api/items', (_req, res) => {
+  res.json({ items: listItems() })
+})
+
+app.get('/api/mylistings', async (_req, res) => {
+  try {
+    res.json(await steam.getMyListings())
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message })
+  }
+})
+
+app.get('/api/price', async (req, res) => {
+  const hash = typeof req.query.hash === 'string' ? req.query.hash : ''
+  if (!hash) {
+    res.status(400).json({ error: 'hash query param is required' })
+    return
+  }
+  try {
+    res.json({ hash, providers: await comparePrices(hash) })
+  } catch (err) {
+    res.status(500).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/sell', async (req, res) => {
+  const { assetid, price } = req.body as { assetid?: string; price?: number }
+  if (!assetid || typeof price !== 'number' || price <= 0) {
+    res.status(400).json({ error: 'assetid and price (in cents) are required' })
+    return
+  }
+  try {
+    res.json(await steam.sellItem(assetid, price))
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/cancel', async (req, res) => {
+  const { listingid } = req.body as { listingid?: string }
+  if (!listingid) {
+    res.status(400).json({ error: 'listingid is required' })
+    return
+  }
+  try {
+    res.json(await steam.cancelListing(listingid))
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message })
+  }
+})
+
+const distDir = path.resolve(process.cwd(), 'dist')
+app.use(express.static(distDir))
+app.use((req, res, next) => {
+  if (req.method !== 'GET' || req.path.startsWith('/api/')) {
+    next()
+    return
+  }
+  const index = path.join(distDir, 'index.html')
+  if (existsSync(index)) {
+    res.sendFile(index)
+    return
+  }
+  next()
+})
+
+const port = Number(process.env.PORT ?? 3000)
+const host = process.env.HOST ?? '127.0.0.1'
+
+app.listen(port, host, () => {
+  if (existsSync(path.join(distDir, 'index.html'))) {
+    console.info(`[skin-hq] http://${host}:${port} (client + API)`)
+  } else {
+    console.info(`[skin-hq] API on http://${host}:${port}; client runs via \`npm run dev:client\``)
+  }
+})

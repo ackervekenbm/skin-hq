@@ -1,0 +1,15 @@
+services:
+  skin-hq:
+    build: .
+    image: skin-hq:latest
+    container_name: skin-hq
+    ports:
+      - "8090:3000"
+    environment:
+      SKINHQ_SESSION_KEY: ${SKINHQ_SESSION_KEY:?set SKINHQ_SESSION_KEY in .env}
+    volumes:
+      - skin-hq-data:/app/data
+    restart: unless-stopped
+
+volumes:
+  skin-hq-data:

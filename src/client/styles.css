@@ -1,0 +1,229 @@
+:root {
+  --bg: #0b1020;
+  --panel: #121a30;
+  --panel-2: #182244;
+  --text: #e6e9f2;
+  --muted: #8b93a8;
+  --accent: #5b8cff;
+  --ok: #46d1a0;
+  --err: #ff6b6b;
+  --border: #232e4d;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+}
+
+.app {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px 48px;
+}
+
+header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: 0.5px;
+}
+
+.build {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.card {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.card h2 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--muted);
+}
+
+.auth,
+.actions,
+.pricebar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.auth input,
+.pricebar input,
+.row input {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
+.auth input {
+  flex: 1;
+  min-width: 140px;
+}
+
+.pricebar {
+  flex: 1;
+  min-width: 320px;
+}
+
+.pricebar input {
+  flex: 1;
+}
+
+button {
+  background: var(--accent);
+  color: #fff;
+  border: 0;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+button:hover:not(:disabled) {
+  filter: brightness(1.1);
+}
+
+button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.row:last-child {
+  border-bottom: 0;
+}
+
+.row .icon {
+  width: 60px;
+  height: 44px;
+  object-fit: contain;
+  background: #000;
+  border-radius: 4px;
+}
+
+.row .meta {
+  flex: 1;
+  min-width: 180px;
+}
+
+.row .meta .name {
+  font-weight: 600;
+}
+
+.row .meta .sub,
+.muted,
+.row .prices .muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.row .prices {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  min-width: 180px;
+}
+
+.row .prices span {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 2px 6px;
+  font-size: 12px;
+  font-family: var(--mono);
+}
+
+.row input {
+  width: 84px;
+}
+
+.badge {
+  font-size: 11px;
+  border-radius: 5px;
+  padding: 2px 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+}
+
+.badge.ok {
+  color: var(--ok);
+  border-color: var(--ok);
+}
+
+.mono {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.rows.narrow .row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 80px auto;
+}
+
+.log ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.log li {
+  padding: 2px 0;
+  border-bottom: 1px dashed var(--border);
+}
+
+.log li.ok {
+  color: var(--ok);
+}
+
+.log li.err {
+  color: var(--err);
+}
+
+footer {
+  color: var(--muted);
+  font-size: 11px;
+  text-align: center;
+}
