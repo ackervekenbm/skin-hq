@@ -43,10 +43,9 @@ Dockerfile) so later phases land in an already-proven container.
 
 ### Notes
 
-- Branch protection on `main` requires **GitHub Pro** for private repos
-  (`403 Upgrade to GitHub Pro or make this repository public`). Deferred:
-  either upgrade to Pro or make the repo public. Until then, commits land
-  directly on `main` — keep `npm run build` green before each one.
+- `main` is now protected (verified Sep 2026): required `check` status
+  (strict), 1 approving review, dismiss stale reviews, enforce admins.
+  All changes land via PR + squash merge (`Fixes #<n>` in the body).
 
 ### Live spike findings (Sep 2026)
 
