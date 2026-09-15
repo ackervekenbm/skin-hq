@@ -36,9 +36,17 @@ Dockerfile) so later phases land in an already-proven container.
 - [PARTIAL] Cancel listing: `POST /market/removelisting/{id}` — implemented,
       awaiting live credentials
 - [ ] Confirm in Steam Mobile; verify listing appears/disappears
+- [x] Repo created + pushed: `https://github.com/ackervekenbm/skin-hq` (private)
 - [ ] Docker build passes locally — **blocked**: Docker not installed on the
       dev machine (Sep 2026); Dockerfile mirrors vinyl-vault's proven
       pattern, CI will validate on GitHub runners
+
+### Notes
+
+- Branch protection on `main` requires **GitHub Pro** for private repos
+  (`403 Upgrade to GitHub Pro or make this repository public`). Deferred:
+  either upgrade to Pro or make the repo public. Until then, commits land
+  directly on `main` — keep `npm run build` green before each one.
 
 ### Live spike findings (Sep 2026)
 
