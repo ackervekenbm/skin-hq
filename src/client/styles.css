@@ -87,6 +87,24 @@ header h1 {
   min-width: 140px;
 }
 
+.inline {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex: 1;
+  min-width: 320px;
+}
+
+.inline input {
+  flex: 1;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 10px;
+  font-size: 13px;
+}
+
 .pricebar {
   flex: 1;
   min-width: 320px;
@@ -177,6 +195,13 @@ button:disabled {
   width: 84px;
 }
 
+.row .price {
+  min-width: 70px;
+  text-align: right;
+  font-weight: 600;
+  font-family: var(--mono);
+}
+
 .badge {
   font-size: 11px;
   border-radius: 5px;
@@ -218,8 +243,18 @@ button:disabled {
   color: var(--ok);
 }
 
+.log li.warn {
+  color: #e8c668;
+}
+
 .log li.err {
   color: var(--err);
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 12px;
+  margin: 4px 0;
 }
 
 footer {
