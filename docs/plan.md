@@ -43,10 +43,9 @@ Dockerfile) so later phases land in an already-proven container.
 
 ### Notes
 
-- Branch protection on `main` requires **GitHub Pro** for private repos
-  (`403 Upgrade to GitHub Pro or make this repository public`). Deferred:
-  either upgrade to Pro or make the repo public. Until then, commits land
-  directly on `main` — keep `npm run build` green before each one.
+- `main` is now protected (verified Sep 2026): required `check` status
+  (strict), 1 approving review, dismiss stale reviews, enforce admins.
+  All changes land via PR + squash merge (`Fixes #<n>` in the body).
 
 ### Live spike findings (Sep 2026)
 
@@ -62,6 +61,22 @@ Dockerfile) so later phases land in an already-proven container.
   csmarketapi free tier). Provider interface already isolates this.
 - Module-load ordering gotcha: schema is created at `db.ts` import time
   (not from `index.ts`), because `steam.ts` restores the session at load.
+- **Steam fingerprint-limits the legacy `request` transport**: same IP, same
+  Chrome UA, but `steamcommunity.httpRequestGet` (request@2) gets `HTTP 429`
+  while Node's native `fetch` (undici) gets `200`. Public calls now bypass
+  the library transport and use `fetch` (`fetchText` in `steam.ts`); the
+  cookie-jar transport is reserved for session-required market actions.
+- **Anonymous inventory pulls are per-IP tarpitted** (`HTTP 429`, body
+  `null`) — `/inventory/{steamid}/730/2` — while the profile/XML endpoint
+  stays `200`. Confirmed for `76561199441277642` (public inventory) after a
+  small burst; the tarpit lasts minutes+ per endpoint, not a fixed second
+  count. Logged-in pulls get far better treatment → the login path is the
+  primary inventory source; public inventory is a best-effort convenience
+  with 429 backoff. `fetchText` retries 429 with exponential backoff.
+- Public-inventory feature (Phase 0 spike bonus): `/api/steamid` resolves
+  profile URL / custom URL / steamid64, `/api/inventory?steamid=` pulls a
+  public inventory anonymously — works only while Steam allows anonymous
+  reads from the IP.
 
 ## Phase 1 — Read core
 
