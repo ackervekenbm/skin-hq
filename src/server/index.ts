@@ -18,13 +18,35 @@ app.get('/api/auth/status', (_req, res) => {
 })
 
 app.post('/api/auth/login', async (req, res) => {
-  const { accountName, password, twoFactorCode } = req.body as { accountName?: string; password?: string; twoFactorCode?: string }
+  const { accountName, password } = req.body as { accountName?: string; password?: string }
   if (!accountName || !password) {
     res.status(400).json({ error: 'accountName and password are required' })
     return
   }
   try {
-    res.json(await steam.login(accountName, password, twoFactorCode))
+    const step = await steam.login(accountName, password)
+    if (step.status === 'ok') {
+      res.json({ loggedIn: true, steamid: step.steamid })
+      return
+    }
+    if (step.guard === 'approval') {
+      res.json({ needsApproval: true })
+      return
+    }
+    res.json({ needsCode: true, guard: step.guard, emaildomain: step.emaildomain })
+  } catch (err) {
+    res.status(401).json({ error: (err as Error).message })
+  }
+})
+
+app.post('/api/auth/guard', async (req, res) => {
+  const { code } = req.body as { code?: string }
+  if (!code) {
+    res.status(400).json({ error: 'code is required' })
+    return
+  }
+  try {
+    res.json(await steam.submitGuardCode(code.trim()))
   } catch (err) {
     res.status(401).json({ error: (err as Error).message })
   }
@@ -34,11 +56,25 @@ app.post('/api/auth/logout', (_req, res) => {
   res.json(steam.logout())
 })
 
-app.get('/api/inventory', async (_req, res) => {
+app.get('/api/inventory', async (req, res) => {
+  const steamid = typeof req.query.steamid === 'string' ? req.query.steamid : undefined
   try {
-    res.json(await steam.getInventory())
+    res.json(steamid ? await steam.getPublicInventory(steamid) : await steam.getInventory())
   } catch (err) {
     res.status(401).json({ error: (err as Error).message })
+  }
+})
+
+app.get('/api/steamid', async (req, res) => {
+  const input = typeof req.query.input === 'string' ? req.query.input : ''
+  if (!input) {
+    res.status(400).json({ error: 'input query param is required' })
+    return
+  }
+  try {
+    res.json({ steamid64: await steam.resolveSteamID64(input) })
+  } catch (err) {
+    res.status(400).json({ error: (err as Error).message })
   }
 })
 
