@@ -1,12 +1,15 @@
+# Deploy compose file — copy this to the deploy server (e.g. OpenMediaVault).
+# The image is built and published to GHCR by CI (.github/workflows/docker-build.yml);
+# this file only pulls and runs it. Set env values in a .env file next to it.
 services:
   skin-hq:
-    build: .
-    image: skin-hq:latest
+    image: ghcr.io/ackervekenbm/skin-hq:latest
     container_name: skin-hq
     ports:
       - "8090:3000"
     environment:
       SKINHQ_SESSION_KEY: ${SKINHQ_SESSION_KEY:?set SKINHQ_SESSION_KEY in .env}
+      CSFLOAT_API_KEY: ${CSFLOAT_API_KEY:-}
     volumes:
       - skin-hq-data:/app/data
     restart: unless-stopped

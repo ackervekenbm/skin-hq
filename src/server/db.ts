@@ -30,6 +30,29 @@ db.exec(`
       raw TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+    CREATE TABLE IF NOT EXISTS price_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      market_hash_name TEXT NOT NULL,
+      provider TEXT NOT NULL,
+      lowest_cents INTEGER,
+      median_cents INTEGER,
+      volume INTEGER,
+      sell_count INTEGER,
+      buy_count INTEGER,
+      had_error INTEGER NOT NULL DEFAULT 0,
+      note TEXT,
+      fetched_at TEXT NOT NULL
+    );
+    CREATE INDEX IF NOT EXISTS idx_price_snapshots_hash
+      ON price_snapshots (market_hash_name, provider);
+    CREATE TABLE IF NOT EXISTS my_listings (
+      listingid TEXT PRIMARY KEY,
+      assetid TEXT,
+      market_hash_name TEXT,
+      price_cents INTEGER,
+      appid INTEGER NOT NULL DEFAULT 730,
+      updated_at TEXT NOT NULL
+    );
   `)
 
 export interface StoredSession {
@@ -96,4 +119,91 @@ export interface ItemRow {
   marketable: number
   raw: string
   updated_at: string
+}
+
+export interface PriceSnapshotInput {
+  market_hash_name: string
+  provider: string
+  lowest_cents?: number | null
+  median_cents?: number | null
+  volume?: number | null
+  sell_count?: number | null
+  buy_count?: number | null
+  had_error?: number
+  note?: string | null
+}
+
+export interface PriceSnapshotRow extends PriceSnapshotInput {
+  id: number
+  fetched_at: string
+}
+
+export interface MyListingRow {
+  listingid: string
+  assetid: string
+  market_hash_name: string
+  price_cents: number | null
+  updated_at: string
+}
+
+export function insertPriceSnapshot(input: PriceSnapshotInput): void {
+  db.prepare(
+    `INSERT INTO price_snapshots
+       (market_hash_name, provider, lowest_cents, median_cents, volume, sell_count, buy_count, had_error, note, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+  ).run(
+    input.market_hash_name,
+    input.provider,
+    input.lowest_cents ?? null,
+    input.median_cents ?? null,
+    input.volume ?? null,
+    input.sell_count ?? null,
+    input.buy_count ?? null,
+    input.had_error ?? 0,
+    input.note ?? null,
+    new Date().toISOString(),
+  )
+}
+
+export function latestPriceSnapshots(): { byItem: Map<string, Map<string, PriceSnapshotRow>>; latestAt: string | null } {
+  const rows = db
+    .prepare(
+      `SELECT market_hash_name, provider, lowest_cents, median_cents, volume, sell_count, buy_count, had_error, note, fetched_at
+       FROM price_snapshots snap
+       WHERE fetched_at = (
+         SELECT MAX(fetched_at) FROM price_snapshots
+         WHERE market_hash_name = snap.market_hash_name AND provider = snap.provider
+       )`,
+    )
+    .all() as Array<Omit<PriceSnapshotRow, 'id'>>
+
+  const byItem = new Map<string, Map<string, PriceSnapshotRow>>()
+  let latestAt: string | null = null
+  for (const r of rows) {
+    let providers = byItem.get(r.market_hash_name)
+    if (!providers) {
+      providers = new Map()
+      byItem.set(r.market_hash_name, providers)
+    }
+    const row = { ...r, id: 0 }
+    providers.set(r.provider, row)
+    if (!latestAt || r.fetched_at > latestAt) latestAt = r.fetched_at
+  }
+  return { byItem, latestAt }
+}
+
+export function replaceMyListings(rows: MyListingRow[]): void {
+  const tx = db.transaction((list: MyListingRow[]) => {
+    db.prepare('DELETE FROM my_listings').run()
+    const stmt = db.prepare(
+      `INSERT OR REPLACE INTO my_listings (listingid, assetid, market_hash_name, price_cents, updated_at)
+       VALUES (?, ?, ?, ?, ?)`,
+    )
+    for (const l of list) stmt.run(l.listingid, l.assetid, l.market_hash_name, l.price_cents, l.updated_at)
+  })
+  tx(rows)
+}
+
+export function listMyListings(): MyListingRow[] {
+  return db.prepare('SELECT * FROM my_listings').all() as MyListingRow[]
 }

@@ -5,6 +5,7 @@ import './db'
 import * as steam from './steam'
 import { comparePrices } from './price'
 import { listItems } from './db'
+import { buildGrid, sync } from './sync'
 
 const app = express()
 app.use(express.json())
@@ -82,6 +83,19 @@ app.get('/api/items', (_req, res) => {
   res.json({ items: listItems() })
 })
 
+app.get('/api/grid', (_req, res) => {
+  res.json(buildGrid())
+})
+
+app.post('/api/sync', async (_req, res) => {
+  const started = await sync.syncAll()
+  res.json({ started, sync: sync.status() })
+})
+
+app.get('/api/sync/status', (_req, res) => {
+  res.json(sync.status())
+})
+
 app.get('/api/mylistings', async (_req, res) => {
   try {
     res.json(await steam.getMyListings())
@@ -104,13 +118,13 @@ app.get('/api/price', async (req, res) => {
 })
 
 app.post('/api/sell', async (req, res) => {
-  const { assetid, price } = req.body as { assetid?: string; price?: number }
+  const { assetid, contextid, price } = req.body as { assetid?: string; contextid?: string; price?: number }
   if (!assetid || typeof price !== 'number' || price <= 0) {
     res.status(400).json({ error: 'assetid and price (in cents) are required' })
     return
   }
   try {
-    res.json(await steam.sellItem(assetid, price))
+    res.json(await steam.sellItem(assetid, price, contextid && contextid !== '2' ? contextid : undefined))
   } catch (err) {
     res.status(401).json({ error: (err as Error).message })
   }

@@ -6,5 +6,7 @@ data
 *.log
 .gitignore
 .dockerignore
+.env
+.env.*
 README.md
 docs

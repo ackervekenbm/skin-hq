@@ -37,6 +37,8 @@ declare module 'steamcommunity' {
     market_marketable_restriction?: string
     type?: string
     pos: number
+    tags?: Array<{ internal_name: string; name: string; category: string }>
+    descriptions?: Array<{ type: string | number; value: string; color?: string }>
   }
 
   interface CMarketItem {
