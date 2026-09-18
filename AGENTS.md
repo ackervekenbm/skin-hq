@@ -37,8 +37,10 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
 - `main` is protected: **no direct pushes** — every change lands via a pull
   request and a **squash merge**. Required check: `check` (CI). Branch
   auto-delete on merge is expected.
+- **The PR author never merges their own PR.** Open the PR, make sure the
+  `check` status passes, then stop and let the maintainer review and merge.
 - Pattern: create branch → implement → `npm run build` → push → `gh pr create`
-  → merge once `check` passes. Use `gh pr merge --squash` when asked to merge.
+  → wait for `check` to pass → leave for maintainer review.
 - Commit messages are imperative, single-paragraph (plus context lines), and
   reference the fix: `Fixes #<n>`.
 

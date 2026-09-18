@@ -91,6 +91,26 @@ marketplaces. Background sync jobs with throttling.
   buy depth, third-party prices, listing status), compare view
   (Steam order book vs cash-out marketplaces, net after fees)
 
+### Milestone P1-A — schema + background sync + grid (done)
+
+- `price_snapshots` + `my_listings` tables; `latestPriceSnapshots()`
+  materializes the newest snapshot per (hash, provider).
+- `SyncEngine` (`src/server/sync.ts`): one `syncAll()` run that pulls
+  inventory → listings → prices with per-request pacing
+  (`SYNC_PRICE_DELAY_MS`, cap `SYNC_MAX_ITEMS`); every job is isolated so
+  one failure doesn't abort the run; errors surface via `/api/sync/status`.
+- Grid API `/api/grid` joins marketable items with their latest Steam
+  (floor/vol/median) + CSFloat snapshots and the active listing, sorted
+  by market hash name; UI reads SQLite only, never blocks on live calls.
+- "Sync now" button runs the background job; grid auto-refreshes while
+  it publishes.
+
+### Outstanding (next milestones)
+
+- Buy depth via `/market/itemordershistogram` (needs `item_nameid`).
+- CSFloat inspect for float value / stickers on tracked items.
+- Compare view: Steam order book vs cash-out marketplaces, net after fees.
+
 ## Phase 2 — Listing management (semi-auto)
 
 Semi-auto means: the app computes prices, cancels/re-lists via API, but

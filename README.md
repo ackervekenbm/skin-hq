@@ -45,15 +45,33 @@ time.
 
 ## Run it in Docker
 
+CI builds a secrets-free image and publishes it to GHCR
+(`.github/workflows/docker-build.yml`, amd64 + arm64). The deploy server
+does not need this repo checked out — copy `docker-compose.yml` plus a
+`.env` over and pull the image:
+
 ```bash
-cp .env.example .env          # fill in SKINHQ_SESSION_KEY (a random hex string)
-docker compose up --build
+# on the deploy server (once)
+node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # generate a key
+
+# copy docker-compose.yml alongside, then create .env next to it:
+cat > .env <<EOF
+SKINHQ_SESSION_KEY=<the hex from above>
+CSFLOAT_API_KEY=<optional, csfloat.com key>
+EOF
+
+docker compose up -d          # pulls ghcr.io/ackervekenbm/skin-hq and runs it
 ```
 
 Then open <http://localhost:8090>. The image is multi-stage: the app is
 compiled in `node:22-alpine`, then run by `node:22-alpine` running the
-Express server (API + static client). Your data lives in a named Docker
-volume (`skin-hq-data`), so redeploys keep your session and cache.
+Express server (API + static client). No secrets are baked into the image;
+compose injects them from the server's `.env` at runtime. Data lives in the
+Docker volume `skin-hq-data`, so redeploys keep your session and cache.
+
+> If the repo is private, log into GHCR first:
+> `echo $GITHUB_TOKEN | docker login ghcr.io -u <owner> --password-stdin`.
+> Updating: `docker compose pull && docker compose up -d`.
 
 ## Scripts
 

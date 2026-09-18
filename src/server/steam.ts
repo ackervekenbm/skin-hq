@@ -174,7 +174,7 @@ interface JsonResponse {
   body: Record<string, unknown>
 }
 
-function httpJson(method: 'get' | 'post', uri: string, extra: Record<string, unknown> = {}, retries = 3): Promise<JsonResponse> {
+export function httpJson(method: 'get' | 'post', uri: string, extra: Record<string, unknown> = {}, retries = 3): Promise<JsonResponse> {
   return new Promise<JsonResponse>((resolve, reject) => {
     const attempt = (remaining: number, delay: number): void => {
       const options = { json: true, ...extra }
@@ -201,6 +201,7 @@ function httpJson(method: 'get' | 'post', uri: string, extra: Record<string, unk
 
 export interface InventoryItem {
   assetid: string
+  contextid: string
   name: string
   market_hash_name: string
   type: string
@@ -209,23 +210,24 @@ export interface InventoryItem {
   marketable: boolean
   marketable_restriction?: string
   pos: number
+  tags?: Array<{ internal_name: string; name: string; category: string }>
+  descriptions?: Array<{ type: string | number; value: string; color?: string }>
 }
 
-export async function getInventory(): Promise<{ items: InventoryItem[]; total: number }> {
-  requireSession()
+function fetchContext(contextid: string): Promise<CEconItem[]> {
   const steamid = community.steamID as { getSteamID64(): string }
-  const [inventory, , total] = await new Promise<[CEconItem[], unknown[], number]>((resolve, reject) => {
-    community.getUserInventoryContents(steamid, APPID, CONTEXTID, false, 'english', (err, inv, currencies, count) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      resolve([inv, currencies, count])
+  return new Promise<CEconItem[]>((resolve, reject) => {
+    community.getUserInventoryContents(steamid, APPID, contextid, false, 'english', (err, inv) => {
+      if (err) { reject(err); return }
+      resolve(inv)
     })
   })
+}
 
-  const items: InventoryItem[] = inventory.map((item) => ({
+function mapItem(item: CEconItem, contextid: string): InventoryItem {
+  return {
     assetid: item.assetid,
+    contextid,
     name: item.name ?? item.market_hash_name ?? 'Unknown',
     market_hash_name: item.market_hash_name ?? '',
     type: item.type ?? '',
@@ -234,11 +236,30 @@ export async function getInventory(): Promise<{ items: InventoryItem[]; total: n
     marketable: !!item.marketable,
     marketable_restriction: item.market_marketable_restriction,
     pos: item.pos,
-  }))
+    tags: (item.tags ?? []).map((t) => ({ internal_name: String(t.internal_name ?? ''), name: String(t.name ?? ''), category: String(t.category ?? '') })),
+    descriptions: (item.descriptions ?? []).map((d) => ({ type: d.type, value: String(d.value ?? ''), color: d.color })),
+  }
+}
 
+export async function getInventory(): Promise<{ items: InventoryItem[]; total: number }> {
+  requireSession()
+  const byId = new Map<string, InventoryItem>()
+
+  const inv2 = await fetchContext(CONTEXTID)
+  for (const item of inv2) byId.set(item.assetid, mapItem(item, CONTEXTID))
+
+  try {
+    // Context 16 (currently listed/on-market items) is an enhancement — a
+    // transient failure here must not fail the whole inventory sync.
+    const inv16 = await fetchContext('16')
+    for (const item of inv16) if (!byId.has(item.assetid)) byId.set(item.assetid, mapItem(item, '16'))
+  } catch (err) {
+    console.warn('[inventory] context 16 (listed items) fetch failed, continuing with context 2 only:', (err as Error).message)
+  }
+
+  const items = [...byId.values()]
   persistItems(items)
-
-  return { items, total }
+  return { items, total: items.length }
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -248,7 +269,7 @@ function persistItems(items: InventoryItem[]): void {
     items.map((i) => ({
       assetid: i.assetid,
       appid: APPID,
-      contextid: CONTEXTID,
+      contextid: i.contextid ?? CONTEXTID,
       market_hash_name: i.market_hash_name,
       name: i.name,
       type: i.type,
@@ -295,6 +316,7 @@ export async function getPublicInventory(steamid: string): Promise<{ items: Inve
       const d = descById.get(`${a.classid}_${a.instanceid}`)
       return {
         assetid: a.assetid,
+        contextid: CONTEXTID,
         name: d?.market_hash_name ?? d?.name ?? 'Unknown',
         market_hash_name: d?.market_hash_name ?? '',
         type: d?.type ?? '',
@@ -332,6 +354,7 @@ export interface SteamPriceOverview {
   success: boolean
   lowest_cents: number | null
   lowest_price: string | null
+  median_cents: number | null
   median_price: string | null
   volume: number | null
 }
@@ -370,6 +393,7 @@ export async function priceOverview(hashName: string, currency = 1): Promise<Ste
     success: body.success === 1 || body.success === true,
     lowest_cents: body.lowest_price ? parsePriceToCents(body.lowest_price) : null,
     lowest_price: body.lowest_price ?? null,
+    median_cents: body.median_price ? parsePriceToCents(body.median_price) : null,
     median_price: body.median_price ?? null,
     volume: body.volume ? parseInt(body.volume, 10) : null,
   }
@@ -410,14 +434,14 @@ export interface SellResult {
   message?: string
 }
 
-export async function sellItem(assetid: string, priceCents: number): Promise<SellResult> {
+export async function sellItem(assetid: string, priceCents: number, contextid = CONTEXTID): Promise<SellResult> {
   requireSession()
   const steamid = community.steamID as { getSteamID64(): string }
   const res = await httpJson('post', 'https://steamcommunity.com/market/sellitem/', {
     form: {
       sessionid: community.getSessionID(),
       appid: String(APPID),
-      contextid: CONTEXTID,
+      contextid,
       assetid,
       amount: '1',
       price: String(priceCents),
@@ -456,36 +480,66 @@ export interface ListingRow {
 
 export async function getMyListings(): Promise<{ total: number; listings: ListingRow[] }> {
   requireSession()
-  const res = await httpJson('get', 'https://steamcommunity.com/market/mylistings/render/', {
-    qs: { query: '', start: 0, count: 100, norender: 1 },
-  })
-  const body = res.body as {
-    success?: number | boolean
-    total_count?: number | string
-    listings?: Record<string, Record<string, unknown>>
-  }
-  if (!(body.success === 1 || body.success === true)) {
-    throw new Error('Failed to load your market listings')
-  }
-  const map = body.listings ?? {}
-  const listings: ListingRow[] = Object.values(map).map((l) => {
-    const asset = (l.asset as Record<string, unknown>) ?? {}
-    return {
-      listingid: String(l.listingid ?? ''),
-      assetid: (l.assetid as string) ?? String(asset.id ?? ''),
-      price_cents: typeof l.price === 'number' ? (l.price as number) : undefined,
-      name: (asset.name as string) ?? undefined,
-      market_hash_name: (asset.market_hash_name as string) ?? undefined,
-      icon_url: (asset.icon_url as string) ?? undefined,
-      tradable: asset.tradable != null ? asset.tradable === 1 : undefined,
-      marketable: asset.marketable != null ? asset.marketable === 1 : undefined,
-      marketable_restriction: asset.market_marketable_restriction as number | undefined,
+  const pageSize = 100
+  const MAX_PAGES = 20
+
+  const fetchPage = async (start: number): Promise<{ total: number; rows: ListingRow[] }> => {
+    let res = await httpJson('get', 'https://steamcommunity.com/market/mylistings/render/', {
+      qs: { query: '', start, count: pageSize, norender: 1 },
+    })
+    if (res.status !== 200) {
+      // Steam's mylistings endpoint can transiently return HTTP 400 (empty body)
+      // when the account is being paced. One short retry, then a clear error.
+      await sleep(3000)
+      res = await httpJson('get', 'https://steamcommunity.com/market/mylistings/render/', {
+        qs: { query: '', start, count: pageSize, norender: 1 },
+      })
     }
-  })
-  return {
-    total: typeof body.total_count === 'string' ? parseInt(body.total_count, 10) : (body.total_count as number) ?? listings.length,
-    listings,
+    if (res.status !== 200) {
+      throw new Error('Steam rejected the listings request (HTTP ' + res.status + ') — temporary, will retry next sync')
+    }
+    const body = res.body as {
+      success?: number | boolean
+      total_count?: number | string
+      listings?: Record<string, Record<string, unknown>>
+    }
+    if (!(body.success === 1 || body.success === true)) {
+      throw new Error('Failed to load your market listings')
+    }
+    const total =
+      typeof body.total_count === 'string' ? parseInt(body.total_count, 10) : (body.total_count as number) ?? 0
+    const rows = Object.values(body.listings ?? {}).map((l) => {
+      const asset = (l.asset as Record<string, unknown>) ?? {}
+      return {
+        listingid: String(l.listingid ?? ''),
+        assetid: (l.assetid as string) ?? String(asset.id ?? ''),
+        price_cents: typeof l.price === 'number' ? (l.price as number) : undefined,
+        name: (asset.name as string) ?? undefined,
+        market_hash_name: (asset.market_hash_name as string) ?? undefined,
+        icon_url: (asset.icon_url as string) ?? undefined,
+        tradable: asset.tradable != null ? asset.tradable === 1 : undefined,
+        marketable: asset.marketable != null ? asset.marketable === 1 : undefined,
+        marketable_restriction: asset.market_marketable_restriction as number | undefined,
+      }
+    })
+    return { total, rows }
   }
+
+  const first = await fetchPage(0)
+  const all: ListingRow[] = [...first.rows]
+  let total = first.total
+  // The endpoint reports a total_count that can exceed a single page; page
+  // through until we've seen everything or hit the safety cap.
+  while (total > all.length && all.length % pageSize === 0 && all.length / pageSize < MAX_PAGES) {
+    const page = await fetchPage(all.length)
+    if (page.rows.length === 0) break
+    all.push(...page.rows)
+    total = Math.max(total, page.total)
+  }
+  if (total > all.length) {
+    console.warn(`[mylistings] truncated: ${total} active but only fetched ${all.length}`)
+  }
+  return { total, listings: all }
 }
 
 export function parsePriceToCents(text: string): number | null {

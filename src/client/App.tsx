@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 
 interface AuthStatus {
   loggedIn: boolean
@@ -11,38 +11,44 @@ type LoginResponse =
   | { needsApproval: true }
   | { needsCode: true; guard: 'email' | 'mobile'; emaildomain?: string }
 
-interface InventoryItem {
+interface GridPrice {
+  provider: string
+  lowest_cents: number | null
+  median_cents: number | null
+  volume: number | null
+  had_error: number
+  note?: string | null
+  fetched_at: string
+}
+
+interface GridItem {
   assetid: string
+  contextid: string
   name: string
   market_hash_name: string
-  type: string
   icon_url: string
-  tradable: boolean
   marketable: boolean
-  marketable_restriction?: string
-  pos: number
+  marketable_restriction?: string | null
+  rarity: { internal_name: string | null; name: string | null; rank: number } | null
+  prices: Record<string, GridPrice>
+  listing: { listingid: string; price_cents: number | null } | null
 }
 
-interface ListingRow {
-  listingid: string
-  assetid?: string
-  price_cents?: number
-  name?: string
-  market_hash_name?: string
-  icon_url?: string
-  tradable?: boolean
-  marketable?: boolean
-  marketable_restriction?: number
+interface SyncStatus {
+  running: boolean
+  startedAt: string | null
+  phase: 'idle' | 'inventory' | 'listings' | 'prices'
+  current: number
+  total: number
+  last: { inventory: string | null; listings: string | null; prices: string | null }
+  errors: string[]
 }
 
-interface ItemPrice {
-  provider: string
-  currency: string
-  lowest_cents: number | null
-  volume?: number
-  sell_count?: number
-  buy_count?: number
-  error?: string
+interface GridResponse {
+  refreshedAt: string | null
+  counts: { inventory: number; marketable: number; listed: number }
+  sync: SyncStatus
+  items: GridItem[]
 }
 
 interface LogLine {
@@ -50,9 +56,46 @@ interface LogLine {
   text: string
 }
 
+interface RarityGroup {
+  key: string
+  label: string
+  rank: number
+  items: GridItem[]
+}
+
 function formatEuro(cents: number | null | undefined): string {
   if (cents == null) return '—'
   return `€${(cents / 100).toFixed(2)}`
+}
+
+function formatAmount(cents: number, currency: 'EUR' | 'USD'): string {
+  return `${currency === 'USD' ? '$' : '€'}${(cents / 100).toFixed(2)}`
+}
+
+function formatGridPrice(p: GridPrice | null | undefined): string {
+  if (!p || p.lowest_cents == null) return '—'
+  return formatAmount(p.lowest_cents, p.provider === 'csfloat' ? 'USD' : 'EUR')
+}
+
+function relTime(iso: string | null | undefined): string {
+  if (!iso) return '—'
+  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
+  if (s < 60) return `${s}s ago`
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`
+  return `${Math.floor(s / 3600)}h ago`
+}
+
+function wearOf(hash: string): string {
+  const m = hash.match(/\(([^)]+)\)$/)
+  return m ? m[1] : ''
+}
+
+function isStatTrak(name: string, hash: string): boolean {
+  return /^StatTrak/i.test(name) || /^StatTrak/i.test(hash)
+}
+
+function baseName(name: string): string {
+  return name.replace(/^StatTrak\u2122?\s*/i, '').replace(/\s*\([^)]+\)$/, '').trim()
 }
 
 function eurosToCents(input: string): number | null {
@@ -79,11 +122,10 @@ export default function App() {
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [needsCode, setNeedsCode] = useState<'email' | 'mobile' | null>(null)
   const [pendingApproval, setPendingApproval] = useState(false)
-  const [inventory, setInventory] = useState<InventoryItem[]>([])
-  const [listings, setListings] = useState<ListingRow[]>([])
-  const [prices, setPrices] = useState<Record<string, ItemPrice[]>>({})
-  const [priceHash, setPriceHash] = useState('')
-  const [profileInput, setProfileInput] = useState('')
+  const [grid, setGrid] = useState<GridResponse | null>(null)
+  const [gridLoading, setGridLoading] = useState(false)
+  const [groupByRarity, setGroupByRarity] = useState(true)
+  const [listedOnly, setListedOnly] = useState(false)
   const [sellPrices, setSellPrices] = useState<Record<string, string>>({})
   const [log, setLog] = useState<LogLine[]>([])
 
@@ -190,65 +232,49 @@ export default function App() {
     setStatus({ loggedIn: false, steamid: null })
     setNeedsCode(null)
     setPendingApproval(false)
-    setInventory([])
-    setListings([])
     pushLog('ok', 'Logged out')
   }
 
-  async function loadInventory() {
+  const loadGrid = useCallback(async () => {
     try {
-      const { items } = await api<{ items: InventoryItem[]; total: number }>('/api/inventory')
-      setInventory(items)
-      pushLog('ok', `Inventory: ${items.length} items`)
+      const g = await api<GridResponse>('/api/grid')
+      setGrid(g)
     } catch (err) {
-      pushLog('err', `inventory: ${(err as Error).message}`)
+      pushLog('err', `grid: ${(err as Error).message}`)
     }
-  }
+  }, [pushLog])
 
-  async function loadPublicInventory() {
-    try {
-      let steamid = profileInput.trim()
-      if (!/^\d{17}$/.test(steamid)) {
-        const resolved = await api<{ steamid64: string }>(`/api/steamid?input=${encodeURIComponent(steamid)}`)
-        steamid = resolved.steamid64
-      }
-      const { items, total } = await api<{ items: InventoryItem[]; total: number }>(
-        `/api/inventory?steamid=${encodeURIComponent(steamid)}`,
-      )
-      setInventory(items)
-      pushLog('ok', `Public inventory: ${items.length} of ${total} items`)
-    } catch (err) {
-      pushLog('err', `inventory: ${(err as Error).message}`)
-    }
-  }
-
-  async function loadListings() {
-    try {
-      const { total, listings: rows } = await api<{ total: number; listings: ListingRow[] }>('/api/mylistings')
-      setListings(rows)
-      pushLog('ok', `Listings: ${total} total, ${rows.length} shown`)
-    } catch (err) {
-      pushLog('err', `listings: ${(err as Error).message}`)
-    }
-  }
-
-  async function fetchPrice() {
-    const hash = priceHash.trim()
-    if (!hash) {
-      pushLog('err', 'price: enter a market hash name')
+  async function syncNow() {
+    if (!status?.loggedIn) {
+      pushLog('err', 'sync: sign in to Steam first')
       return
     }
+    setGridLoading(true)
     try {
-      const { providers } = await api<{ providers: ItemPrice[] }>(`/api/price?hash=${encodeURIComponent(hash)}`)
-      setPrices((prev) => ({ ...prev, [hash]: providers }))
-      const line = providers.map((p) => `${p.provider}=${formatEuro(p.lowest_cents)}${p.error ? `(${p.error})` : ''}`).join(' | ')
-      pushLog('ok', `Price ${hash}: ${line}`)
+      const r = await api<{ started: boolean; sync: SyncStatus }>('/api/sync', { method: 'POST' })
+      if (!r.started) pushLog('warn', 'Sync already running')
+      else pushLog('ok', 'Sync started — inventory, listings, prices')
     } catch (err) {
-      pushLog('err', `price: ${(err as Error).message}`)
+      pushLog('err', `sync: ${(err as Error).message}`)
+      setGridLoading(false)
+      return
     }
+    for (let i = 0; i < 600; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 2000))
+      let running = true
+      try {
+        running = (await api<SyncStatus>('/api/sync/status')).running
+      } catch {
+        /* keep polling */
+      }
+      await loadGrid()
+      if (!running) break
+    }
+    setGridLoading(false)
+    pushLog('ok', 'Sync finished')
   }
 
-  async function doSell(item: InventoryItem) {
+  async function doSell(item: GridItem) {
     const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
     if (priceCents == null) {
       pushLog('err', `sell ${item.name}: enter a positive price in euros (e.g. 12,50)`)
@@ -257,7 +283,7 @@ export default function App() {
     try {
       const r = await api<{ success: boolean; needs_mobile_confirmation: boolean; message?: string }>('/api/sell', {
         method: 'POST',
-        body: JSON.stringify({ assetid: item.assetid, price: priceCents }),
+        body: JSON.stringify({ assetid: item.assetid, contextid: item.contextid, price: priceCents }),
       })
       const state = r.needs_mobile_confirmation ? 'needs your confirmation in Steam Mobile' : r.success ? 'listed' : 'failed'
       pushLog(r.success ? 'ok' : 'err', `sell ${item.name} @ ${formatEuro(priceCents)}: ${state}${r.message ? ` (${r.message})` : ''}`)
@@ -266,22 +292,102 @@ export default function App() {
     }
   }
 
-  async function doCancel(listing: ListingRow) {
+  async function doCancel(listingid: string) {
     try {
-      const r = await api<{ success: boolean }>('/api/cancel', { method: 'POST', body: JSON.stringify({ listingid: listing.listingid }) })
-      pushLog(r.success ? 'ok' : 'err', `cancel ${listing.listingid}: ${r.success ? 'done' : 'failed'}`)
-      await loadListings()
+      const r = await api<{ success: boolean }>('/api/cancel', { method: 'POST', body: JSON.stringify({ listingid }) })
+      pushLog(r.success ? 'ok' : 'err', `cancel ${listingid}: ${r.success ? 'done' : 'failed'}`)
+      await loadGrid()
     } catch (err) {
       pushLog('err', `cancel: ${(err as Error).message}`)
     }
   }
 
-  function marketIcon(item: InventoryItem): string {
+  function marketIcon(item: GridItem): string {
     if (!item.icon_url) return ''
     return `https://community.cloudflare.steamstatic.com/economy/image/${item.icon_url}`
   }
 
-  const sellable = inventory.filter((item) => item.marketable)
+  const renderCard = (item: GridItem) => {
+    const wear = wearOf(item.market_hash_name)
+    const st = isStatTrak(item.name, item.market_hash_name)
+    const listing = item.listing
+    return (
+      <article className="item-card" key={item.assetid}>
+        <div className="c-title">{baseName(item.name)}</div>
+        <div className="c-img">
+          <img src={marketIcon(item)} alt="" loading="lazy" />
+        </div>
+        <div className="c-badges">
+          {wear && <span className="wear">{wear}</span>}
+          {st && <span className="stat">StatTrak</span>}
+        </div>
+        <div className="c-details">
+          <div className="c-row">
+            <span className="k">Steam</span>
+            <span className="v">{formatGridPrice(item.prices.steam)}</span>
+            {item.prices.steam?.volume != null && <span className="vol">×{item.prices.steam.volume}</span>}
+          </div>
+          <div className="c-row">
+            <span className="k">CSFloat</span>
+            <span className="v">{formatGridPrice(item.prices.csfloat)}</span>
+          </div>
+          <div className="c-row">
+            <span className="k">Status</span>
+            <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
+              {listing ? `listed · ${formatEuro(listing.price_cents)}` : item.marketable ? 'marketable' : 'restricted'}
+            </span>
+          </div>
+        </div>
+        <div className="c-actions">
+          <input
+            placeholder="Sell €"
+            value={sellPrices[item.assetid] ?? ''}
+            onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void doSell(item)
+            }}
+          />
+          <button onClick={() => void doSell(item)} disabled={!status?.loggedIn || !item.marketable || !!listing}>
+            Sell
+          </button>
+          {listing && (
+            <button className="ghost" onClick={() => void doCancel(listing.listingid)}>
+              Cancel
+            </button>
+          )}
+        </div>
+      </article>
+    )
+  }
+
+  const view = useMemo<{ groups: RarityGroup[] | null; items: GridItem[] | null }>(() => {
+    if (!grid) return { groups: null, items: null }
+    const items = listedOnly ? grid.items.filter((i) => i.listing) : grid.items
+    if (!groupByRarity) return { groups: null, items }
+    const groups = new Map<string, GridItem[]>()
+    for (const item of items) {
+      const key = item.rarity?.internal_name ?? 'unranked'
+      const arr = groups.get(key) ?? []
+      arr.push(item)
+      groups.set(key, arr)
+    }
+    const sorted: RarityGroup[] = Array.from(groups.entries())
+      .map(([key, gitems]) => ({
+        key,
+        label: gitems[0]?.rarity?.name ?? 'Other',
+        rank: gitems[0]?.rarity?.rank ?? 99,
+        items: gitems,
+      }))
+      .sort((a, b) => a.rank - b.rank)
+    return { groups: sorted, items: null }
+  }, [grid, groupByRarity, listedOnly])
+
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      void loadGrid()
+    }, 0)
+    return () => clearTimeout(timer)
+  }, [loadGrid, status?.loggedIn])
 
   return (
     <div className="app">
@@ -325,93 +431,66 @@ export default function App() {
       </section>
 
       <section className="card actions">
-        <button onClick={() => void loadInventory()} disabled={!status?.loggedIn}>
-          Load inventory
+        <button onClick={() => void syncNow()} disabled={!status?.loggedIn || gridLoading}>
+          {gridLoading ? 'Syncing…' : 'Sync now'}
         </button>
-        {!status?.loggedIn && (
-          <span className="inline">
-            <input
-              placeholder="Your profile URL or steamid64 (public inventory)"
-              value={profileInput}
-              onChange={(e) => setProfileInput(e.target.value)}
-            />
-            <button onClick={() => void loadPublicInventory()} disabled={!profileInput.trim()}>
-              Load public inventory
-            </button>
+        {grid?.sync.running && (
+          <span className="mono sync-progress">
+            {grid.sync.phase}
+            {grid.sync.phase === 'prices' && grid.sync.total > 0 ? ` ${grid.sync.current}/${grid.sync.total}` : '…'}
           </span>
         )}
-        <button onClick={() => void loadListings()} disabled={!status?.loggedIn}>
-          My listings
-        </button>
-        <div className="pricebar">
-          <input placeholder="Market hash name, e.g. AK-47 | Redline (Field-Tested)" value={priceHash} onChange={(e) => setPriceHash(e.target.value)} />
-          <button onClick={() => void fetchPrice()}>Compare prices</button>
+        {!grid?.sync.running && grid?.sync.last.prices && <span className="muted">prices up to {relTime(grid.sync.last.prices)}</span>}
+      </section>
+
+      {!!grid?.sync.errors.length && (
+        <section className="card sync-errors">
+          <h3>Sync issues</h3>
+          <ul>
+            {grid.sync.errors.map((e, idx) => (
+              <li key={idx}>{e}</li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <section className="card grid-card">
+        <div className="grid-head">
+          <div>
+            <h2>Inventory</h2>
+            <p className="muted counts">
+              {listedOnly
+                ? `${grid?.items.filter((i) => i.listing).length ?? 0} listed shown`
+                : `${grid?.counts.inventory ?? 0} owned · ${grid?.counts.marketable ?? 0} marketable · ${grid?.counts.listed ?? 0} listed`}
+            </p>
+          </div>
+          <div className="head-tools">
+            <button className="toggle" onClick={() => setListedOnly((v) => !v)}>
+              {listedOnly ? 'All items' : 'Listed only'}
+            </button>
+            <button className="toggle" onClick={() => setGroupByRarity((v) => !v)}>
+              {groupByRarity ? 'Flat list' : 'Group by rarity'}
+            </button>
+          </div>
         </div>
-      </section>
-
-      <section className="card inventory">
-        <h2>Inventory ({sellable.length})</h2>
-        {sellable.length === 0 && <p className="muted">Load your inventory to start. Prices are in euros.</p>}
-        <ul className="rows">
-          {sellable.map((item) => (
-            <li key={item.assetid} className="row">
-              <img className="icon" src={marketIcon(item)} alt="" loading="lazy" />
-              <div className="meta">
-                <div className="name">{item.name}</div>
-                <div className="sub">{item.market_hash_name}</div>
-              </div>
-              <span className={`badge ${item.marketable ? 'ok' : 'muted'}`}>{item.marketable ? 'marketable' : item.marketable_restriction ? `not yet (${item.marketable_restriction}d)` : 'not marketable'}</span>
-              <div className="prices">
-                {prices[item.market_hash_name]?.map((p) => (
-                  <span key={p.provider} className={p.error ? 'muted' : ''} title={p.error}>
-                    {p.provider} {formatEuro(p.lowest_cents)}
-                  </span>
-                ))}
-              </div>
-              <input
-                placeholder="price €"
-                value={sellPrices[item.assetid] ?? ''}
-                onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void doSell(item)
-                }}
-              />
-              <button onClick={() => void doSell(item)} disabled={!item.marketable}>
-                Sell
-              </button>
-            </li>
-          ))}
-        </ul>
-      </section>
-
-      <section className="card listings">
-        <h2>My listings</h2>
-        {listings.length === 0 && <p className="muted">No listings loaded.</p>}
-        <ul className="rows">
-          {listings.map((l) => (
-            <li key={l.listingid} className="row">
-              <img
-                className="icon"
-                src={l.icon_url ? `https://community.cloudflare.steamstatic.com/economy/image/${l.icon_url}` : ''}
-                alt=""
-                loading="lazy"
-              />
-              <div className="meta">
-                <div className="name">{l.name ?? l.market_hash_name ?? l.assetid ?? 'Unknown item'}</div>
-                <div className="sub">{l.market_hash_name ?? l.assetid ?? l.listingid}</div>
-              </div>
-              <span className={`badge ${l.marketable === false ? 'muted' : 'ok'}`}>
-                {l.marketable === false
-                  ? l.marketable_restriction
-                    ? `not yet (${l.marketable_restriction}d)`
-                    : 'not marketable'
-                  : 'marketable'}
-              </span>
-              <span className="price">{formatEuro(l.price_cents)}</span>
-              <button onClick={() => void doCancel(l)}>Cancel</button>
-            </li>
-          ))}
-        </ul>
+        {(!grid || grid.items.length === 0) && (
+          <p className="muted">Nothing sellable yet. Sign in and hit “Sync now” to pull your inventory and market prices.</p>
+        )}
+        {view?.groups ? (
+          <div className="cards">
+            {view.groups.map((group) => (
+              <Fragment key={group.key}>
+                <div className="group-head">
+                  <span className="group-name">{group.label}</span>
+                  <span className="group-count">{group.items.length}</span>
+                </div>
+                {group.items.map(renderCard)}
+              </Fragment>
+            ))}
+          </div>
+        ) : grid && grid.items.length > 0 ? (
+          <div className="cards">{(view?.items ?? grid.items).map(renderCard)}</div>
+        ) : null}
       </section>
 
       <section className="card log">
