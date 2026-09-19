@@ -1,8 +1,9 @@
 import SteamCommunity from 'steamcommunity'
-import type { CEconItem, CMarketItem } from 'steamcommunity'
+import type { CEconItem } from 'steamcommunity'
 import { EAuthSessionGuardType, EAuthTokenPlatformType, LoginSession } from 'steam-session'
 import type { StartSessionResponse } from 'steam-session/dist/interfaces-external'
 import { clearSession, loadSession, saveSession, upsertItems } from './db'
+import { decodeSsrOrderbook } from './orderbook'
 
 export const APPID = 730
 export const CONTEXTID = '2'
@@ -402,32 +403,37 @@ export async function priceOverview(hashName: string, currency = CURRENCY_EUR): 
   }
 }
 
-export interface MarketItem {
-  commodity: boolean
-  commodityID: number
-  lowest_cents: number
-  highest_buy_cents: number
-  quantity: number
-  buy_quantity: number
+export interface MarketOrderSpread {
+  lowest_sell_cents: number | null
+  sell_count: number | null
+  highest_buy_cents: number | null
+  buy_count: number | null
 }
 
-export function marketItemDetail(hashName: string, currency = CURRENCY_EUR): Promise<MarketItem> {
-  return new Promise<MarketItem>((resolve, reject) => {
-    community.getMarketItem(APPID, hashName, currency, (err, item: CMarketItem) => {
-      if (err) {
-        reject(err)
-        return
-      }
-      resolve({
-        commodity: item.commodity,
-        commodityID: item.commodityID,
-        lowest_cents: item.lowestPrice,
-        highest_buy_cents: item.highestBuyOrder,
-        quantity: item.quantity,
-        buy_quantity: item.buyQuantity,
-      })
-    })
-  })
+// Steam now renders the market as a React SSR app that embeds the full order
+// book in its `renderContext` payload (see orderbook.ts), so fetch the listing
+// page and decode that block instead of hunting item_nameid.
+export async function marketOrderSpread(
+  hashName: string,
+  currency = CURRENCY_EUR,
+  retries = 3,
+): Promise<MarketOrderSpread> {
+  const page = await fetchText(
+    `https://steamcommunity.com/market/listings/${APPID}/${encodeURIComponent(hashName)}/`,
+    { country: 'US', currency },
+    retries,
+  )
+  const data = decodeSsrOrderbook(page, hashName, APPID)
+  if (data == null) throw new Error(`no embedded orderbook for '${hashName}'`)
+  if (data.eCurrency != null && data.eCurrency !== currency) {
+    throw new Error(`orderbook currency mismatch for '${hashName}' (${data.eCurrency} != ${currency})`)
+  }
+  return {
+    lowest_sell_cents: data.amtMinSellOrder ?? null,
+    sell_count: data.cSellOrders ?? null,
+    highest_buy_cents: data.amtMaxBuyOrder ?? null,
+    buy_count: data.cBuyOrders ?? null,
+  }
 }
 
 export interface SellResult {

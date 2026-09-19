@@ -1,4 +1,4 @@
-import { marketItemDetail, priceOverview } from './steam'
+import { marketOrderSpread, priceOverview } from './steam'
 
 export interface StickerRef {
   name: string
@@ -33,17 +33,17 @@ class SteamProvider implements PriceProvider {
 
   async getItem(hashName: string): Promise<ItemPrice> {
     try {
-      const [overview, detail] = await Promise.allSettled([priceOverview(hashName), marketItemDetail(hashName)])
+      const [overview, spread] = await Promise.allSettled([priceOverview(hashName), marketOrderSpread(hashName)])
       const ov = overview.status === 'fulfilled' ? overview.value : null
-      const det = detail.status === 'fulfilled' ? detail.value : null
+      const det = spread.status === 'fulfilled' ? spread.value : null
       return {
         provider: this.name,
         currency: 'EUR',
-        lowest_cents: det?.lowest_cents ?? ov?.lowest_cents ?? null,
+        lowest_cents: det?.lowest_sell_cents ?? ov?.lowest_cents ?? null,
         median_cents: ov?.median_cents ?? null,
         volume: ov?.volume ?? undefined,
-        sell_count: det?.quantity ?? undefined,
-        buy_count: det?.buy_quantity ?? undefined,
+        sell_count: det?.sell_count ?? undefined,
+        buy_count: det?.buy_count ?? undefined,
         highest_buy_cents: det?.highest_buy_cents ?? null,
         error: ov?.success || det ? undefined : 'no listing data',
       }
