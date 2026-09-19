@@ -13,6 +13,7 @@
     "dev:client": "vite",
     "start": "node dist-server/index.js",
     "build": "npm run typecheck && npm run lint && npm run build:client && npm run build:server",
+    "test": "vitest run",
     "build:client": "vite build",
     "build:server": "tsup src/server/index.ts --format esm --platform node --target node22 --out-dir dist-server --external better-sqlite3 --external steamcommunity --clean",
     "typecheck": "tsc --noEmit",
@@ -44,6 +45,7 @@
     "tsx": "^4.0.0",
     "typescript": "^5.9.3",
     "typescript-eslint": "^8.70.0",
-    "vite": "^8.3.0"
+    "vite": "^8.3.0",
+    "vitest": "^5.0.1"
   }
 }
