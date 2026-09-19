@@ -111,6 +111,12 @@ marketplaces. Background sync jobs with throttling.
 - CSFloat provider niceties: keyed rate limits, sticker passthrough
   (payload exposes float/seed/keychains today; sticker blobs are not yet
   populated by CSFloat).
+- **Sold-history reference (later phase)** — instead of live listings, show
+  "what actually sold in the last X days at what price", weighted by float
+  proximity within the same wear band. Steam's public `pricehistory` is
+  aggregate-only (no per-float split), and public per-float sold-history is
+  sparse (CSFloat exposes latest sales per ballpark float bucket); expect a
+  best-effort, low-confidence weight rather than a precise per-float series.
 
 ## Phase 1.5 — Compare & liquidity (P1-B, done in the `compare` view)
 
@@ -125,6 +131,16 @@ What shipped with the P1-B feature (`feat/phase1b-compare-liquidity`):
   orders (all-null snapshot).
 - **Float / paint seed reference** — CSFloat in-bundle float + paint seed
   stored per snapshot and rendered in the grid's "market ref" row.
+- **Exact own-item floats** — Steam no longer serves inspect links with
+  `S/A/D` params; it now exposes per-asset `asset_properties` in the
+  logged-in CS2 inventory JSON (`propertyid 2` = wear rating,
+  `propertyid 6` = the self-encoded "Item Certificate" hex that is the
+  source of truth). `src/server/floats.ts` decodes that hex offline with the
+  official `@csfloat/cs2-inspect-serializer` (float, seed, stickers,
+  keychains — no API call needed), stored per item (`own_float` /
+  `own_seed` / `own_stickers`) and rendered as the grid's "Your float" row.
+  The CSFloat `<`market ref`>` row now only shows when Steam has no float for
+  that asset (music kits, cases, stickers genuinely have none).
 - **Compare view** — Steam floor (net after 5%+10% Steam fees) vs CSFloat
   (net after 2% seller fee), both converted to USD, with the winning venue
   verdict. `/api/compare?hash=` builds it from the latest snapshots.

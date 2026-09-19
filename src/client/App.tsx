@@ -3,6 +3,7 @@ import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 interface AuthStatus {
   loggedIn: boolean
   steamid: string | null
+  accountName?: string | null
   pendingLogin?: 'approval' | 'email' | 'mobile' | null
 }
 
@@ -36,6 +37,7 @@ interface GridItem {
   marketable: boolean
   marketable_restriction?: string | null
   rarity: { internal_name: string | null; name: string | null; rank: number } | null
+  own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, GridPrice>
   listing: { listingid: string; price_cents: number | null } | null
 }
@@ -185,6 +187,8 @@ export default function App() {
   const [compare, setCompare] = useState<CompareRow | null>(null)
   const [compareLoading, setCompareLoading] = useState(false)
   const [log, setLog] = useState<LogLine[]>([])
+  const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
+  const [syncWatching, setSyncWatching] = useState(false)
 
   const pushLog = useCallback((kind: LogLine['kind'], text: string) => {
     setLog((prev) => [...prev.slice(-30), { kind, text }])
@@ -336,20 +340,38 @@ export default function App() {
       setGridLoading(false)
       return
     }
-    for (let i = 0; i < 600; i++) {
-      await new Promise((resolve) => setTimeout(resolve, 2000))
-      let running = true
-      try {
-        running = (await api<SyncStatus>('/api/sync/status')).running
-      } catch {
-        /* keep polling */
-      }
-      await loadGrid()
-      if (!running) break
-    }
-    setGridLoading(false)
-    pushLog('ok', 'Sync finished')
+    setSyncWatching(true)
   }
+
+  // Auto-refresh the sync status while a sync is running and re-pull the grid
+  // when it finishes, so prices show up without manual reloads.
+  useEffect(() => {
+    if (!syncWatching && !(grid?.sync.running ?? false)) return
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const s = await api<SyncStatus>('/api/sync/status')
+        if (cancelled) return
+        setSyncStatus(s)
+        if (!s.running) {
+          setSyncWatching(false)
+          await loadGrid()
+          setGridLoading(false)
+          pushLog('ok', 'Sync finished')
+        }
+      } catch (err) {
+        pushLog('err', `sync status: ${(err as Error).message}`)
+      }
+    }
+    void tick()
+    const timer = setInterval(tick, 2000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [syncWatching, grid?.sync.running, loadGrid, pushLog])
+
+  const syncDisplay = syncStatus ?? grid?.sync ?? null
 
   async function doSell(item: GridItem) {
     const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
@@ -391,67 +413,121 @@ export default function App() {
     const steam = item.prices.steam
     const csfloat = item.prices.csfloat
     const stickers = parseStickers(csfloat?.stickers)
+    const ownStickersRaw = item.own
+      ? (() => {
+          try {
+            return JSON.parse(item.own.stickers ?? 'null')
+          } catch {
+            return null
+          }
+        })()
+      : null
+    const ownStickerCount =
+      ownStickersRaw && Array.isArray(ownStickersRaw.stickers) ? ownStickersRaw.stickers.length : 0
+    const stickerCount = item.own ? ownStickerCount : stickers.length
+    const isCharm = /^charm \|/i.test(item.name) || /^charm \|/i.test(item.market_hash_name)
+    const charmPattern = ownStickersRaw?.keychains?.length ? ownStickersRaw.keychains[0].pattern : null
+    const showFloat = isCharm ? false : item.own ? item.own.float_value != null : csfloat?.float_value != null
+    const showSeed = isCharm ? false : item.own ? item.own.paint_seed != null : csfloat?.paint_seed != null
+    const showIdentity = isCharm || showFloat || showSeed
+    const sellsDisabled = !status?.loggedIn || !item.marketable || !!listing
     return (
       <article className="item-card" key={item.assetid}>
-        <div className="c-title">{baseName(item.name)}</div>
-        <div className="c-img">
-          <img src={marketIcon(item)} alt="" loading="lazy" />
+        <div className="c-head">
+          <h3 className="c-title">{baseName(item.name)}</h3>
+          {st && <span className="stat-badge">StatTrak</span>}
         </div>
-        <div className="c-badges">
-          {wear && <span className="wear">{wear}</span>}
-          {st && <span className="stat">StatTrak</span>}
-        </div>
-        <div className="c-details">
-          <div className="c-row">
-            <span className="k">Steam</span>
-            <span className="v">{formatGridPrice(steam)}</span>
-            {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
-          </div>
-          {steam?.highest_buy_cents != null && (
-            <div className="c-row sub">
-              <span className="k">Buy depth</span>
-              <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
-              {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
+
+        <div className="c-body">
+          <div className="c-id">
+            <div className="c-img">
+              <img src={marketIcon(item)} alt="" loading="lazy" />
             </div>
-          )}
-          <div className="c-row">
-            <span className="k">CSFloat</span>
-            <span className="v">{formatGridPrice(csfloat)}</span>
+            {showIdentity && (
+              <div className="c-float">
+                {wear && <span className="wear-badge">{wear}</span>}
+                {isCharm ? (
+                  <div className="c-frow">
+                    <span className="k">Pattern</span>
+                    <span className="fv own-float">{charmPattern ?? '—'}</span>
+                  </div>
+                ) : (
+                  <>
+                    {showFloat && (
+                      <div className="c-frow">
+                        <span className="k">Float</span>
+                        <span className={`fv${item.own ? ' own-float' : ''}`}>
+                          {item.own ? formatFloat(item.own.float_value) : formatFloat(csfloat?.float_value)}
+                        </span>
+                      </div>
+                    )}
+                    {showSeed && (
+                      <div className="c-frow">
+                        <span className="k">Seed</span>
+                        <span className="fv">{item.own ? item.own.paint_seed ?? '—' : csfloat?.paint_seed ?? '—'}</span>
+                      </div>
+                    )}
+                  </>
+                )}
+                {stickerCount > 0 && <span className="vol">{stickerCount} sticker{stickerCount > 1 ? 's' : ''}</span>}
+              </div>
+            )}
           </div>
-          {(csfloat?.float_value != null || stickers.length > 0) && (
-            <div className="c-row sub">
-              <span className="k">Market ref</span>
-              <span className="v">{csfloat?.float_value != null ? `fv ${formatFloat(csfloat.float_value)}${steam ? '' : ''}` : ''}</span>
-              {stickers.length > 0 && <span className="vol">{stickers.length} sticker</span>}
+
+          <section className="c-sec">
+            <h4>Steam</h4>
+            <div className="c-row">
+              <span className="k">Floor</span>
+              <span className="v price">{formatGridPrice(steam)}</span>
+              {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
             </div>
-          )}
-          <div className="c-row">
-            <span className="k">Status</span>
-            <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
-              {listing ? `listed · ${formatEuro(listing.price_cents)}` : item.marketable ? 'marketable' : 'restricted'}
-            </span>
-          </div>
-        </div>
-        <div className="c-actions">
-          <button className="ghost" onClick={() => void openCompare(item.market_hash_name)} disabled={compareLoading}>
-            Compare
-          </button>
-          <input
-            placeholder="Sell €"
-            value={sellPrices[item.assetid] ?? ''}
-            onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') void doSell(item)
-            }}
-          />
-          <button onClick={() => void doSell(item)} disabled={!status?.loggedIn || !item.marketable || !!listing}>
-            Sell
-          </button>
-          {listing && (
-            <button className="ghost" onClick={() => void doCancel(listing.listingid)}>
-              Cancel
-            </button>
-          )}
+            {steam?.highest_buy_cents != null && (
+              <div className="c-row sub">
+                <span className="k">Buy depth</span>
+                <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
+                {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
+              </div>
+            )}
+          </section>
+
+          <section className="c-sec">
+            <h4>CSFloat</h4>
+            <div className="c-row">
+              <span className="k">Floor</span>
+              <span className="v price">{formatGridPrice(csfloat)}</span>
+            </div>
+          </section>
+
+          <section className="c-sec sell">
+            <h4>Sell</h4>
+            <div className="c-status">
+              <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
+                {listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
+              </span>
+              {listing && <span className="mono price">{formatEuro(listing.price_cents)}</span>}
+            </div>
+            <div className="c-actions">
+              <input
+                placeholder="Sell €"
+                value={sellPrices[item.assetid] ?? ''}
+                onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void doSell(item)
+                }}
+              />
+              <button onClick={() => void doSell(item)} disabled={sellsDisabled}>
+                Sell
+              </button>
+              {listing && (
+                <button className="ghost" onClick={() => void doCancel(listing.listingid)}>
+                  Cancel
+                </button>
+              )}
+              <button className="ghost" onClick={() => void openCompare(item.market_hash_name)} disabled={compareLoading}>
+                Compare
+              </button>
+            </div>
+          </section>
         </div>
       </article>
     )
@@ -490,16 +566,21 @@ export default function App() {
     <div className="app">
       <header>
         <h1>SkinHQ</h1>
-        <span className="build">spike · {status?.loggedIn ? `signed in as ${status.steamid}` : 'not signed in to Steam'}</span>
+        <span className="build">
+          {status?.loggedIn ? `signed in as ${status.accountName ?? status.steamid}` : 'not signed in to Steam'}
+        </span>
       </header>
 
       <section className="card auth">
-        <input placeholder="Steam account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
-        <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
         {status?.loggedIn ? (
-          <button onClick={() => void doLogout()}>Log out</button>
+          <div className="auth-signed-in">
+            <span className="muted">Signed in as {status.accountName ?? status.steamid}</span>
+            <button onClick={() => void doLogout()}>Log out</button>
+          </div>
         ) : (
           <>
+            <input placeholder="Steam account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
+            <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
             {needsCode != null ? (
               <>
                 <p className="hint">
@@ -531,13 +612,13 @@ export default function App() {
         <button onClick={() => void syncNow()} disabled={!status?.loggedIn || gridLoading}>
           {gridLoading ? 'Syncing…' : 'Sync now'}
         </button>
-        {grid?.sync.running && (
+        {syncDisplay?.running && (
           <span className="mono sync-progress">
-            {grid.sync.phase}
-            {grid.sync.phase === 'prices' && grid.sync.total > 0 ? ` ${grid.sync.current}/${grid.sync.total}` : '…'}
+            {syncDisplay.phase}
+            {syncDisplay.phase === 'prices' && syncDisplay.total > 0 ? ` ${syncDisplay.current}/${syncDisplay.total}` : '…'}
           </span>
         )}
-        {!grid?.sync.running && grid?.sync.last.prices && <span className="muted">prices up to {relTime(grid.sync.last.prices)}</span>}
+        {!syncDisplay?.running && syncDisplay?.last.prices && <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>}
       </section>
 
       {compare && (
@@ -647,11 +728,11 @@ export default function App() {
         </section>
       )}
 
-      {!!grid?.sync.errors.length && (
+      {!!(syncDisplay?.errors.length ?? 0) && (
         <section className="card sync-errors">
           <h3>Sync issues</h3>
           <ul>
-            {grid.sync.errors.map((e, idx) => (
+            {(syncDisplay?.errors ?? []).map((e, idx) => (
               <li key={idx}>{e}</li>
             ))}
           </ul>

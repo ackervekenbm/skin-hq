@@ -67,6 +67,12 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   React SSR listing page embeds in its `renderContext` payload (the classic
   `Market_LoadOrderSpread` HTML globals and the `itemordershistogram`
   endpoint that needs `item_nameid` are both gone).
+- `src/server/floats.ts` — pure offline decoder for own-item floats: Steam's
+  CS2 inventory JSON exposes per-asset `asset_properties` whose `propertyid 6`
+  ("Item Certificate") is the self-encoded inspect-link hex; it decodes it
+  with `@csfloat/cs2-inspect-serializer` into exact float/paint-seed/
+  stickers/keychains. `steam.ts` attaches these in `getInventory()` (best-
+  effort, contexts 2 + 16) and stores them on `items.own_float/*`.
 - `src/client/` — React UI. The Phase 0 spike harness (login, inventory,
   prices, sell/cancel) doubles as the seed of the Phase 1 inventory grid.
 - `src/types/steamcommunity.d.ts` — ambient declarations for

@@ -60,7 +60,8 @@ db.exec(`
   `)
 
   // Migrations for pre-P1-B databases: add the liquidity/float columns that
-  // the original price_snapshots table did not have. Idempotent.
+  // the original price_snapshots table did not have, plus the own-item float
+  // columns on items. Idempotent.
   const cols = (db.prepare('PRAGMA table_info(price_snapshots)').all() as Array<{ name: string }>).map((c) => c.name)
   const addCol = (name: string, ddl: string): void => {
     if (!cols.includes(name)) db.exec(`ALTER TABLE price_snapshots ADD COLUMN ${ddl}`)
@@ -69,6 +70,14 @@ db.exec(`
   addCol('float_value', 'float_value REAL')
   addCol('paint_seed', 'paint_seed INTEGER')
   addCol('stickers', 'stickers TEXT')
+
+  const itemCols = (db.prepare('PRAGMA table_info(items)').all() as Array<{ name: string }>).map((c) => c.name)
+  const addItemCol = (name: string, ddl: string): void => {
+    if (!itemCols.includes(name)) db.exec(`ALTER TABLE items ADD COLUMN ${ddl}`)
+  }
+  addItemCol('own_float', 'own_float REAL')
+  addItemCol('own_seed', 'own_seed INTEGER')
+  addItemCol('own_stickers', 'own_stickers TEXT')
 
 export interface StoredSession {
   accountName: string
@@ -102,8 +111,8 @@ export function clearSession(): void {
 
 export function upsertItems(items: ItemRow[]): void {
   const stmt = db.prepare(
-    `INSERT INTO items (assetid, appid, contextid, market_hash_name, name, type, icon_url, tradable, marketable, raw, updated_at)
-     VALUES (@assetid, @appid, @contextid, @market_hash_name, @name, @type, @icon_url, @tradable, @marketable, @raw, @updated_at)
+    `INSERT INTO items (assetid, appid, contextid, market_hash_name, name, type, icon_url, tradable, marketable, raw, own_float, own_seed, own_stickers, updated_at)
+     VALUES (@assetid, @appid, @contextid, @market_hash_name, @name, @type, @icon_url, @tradable, @marketable, @raw, @own_float, @own_seed, @own_stickers, @updated_at)
      ON CONFLICT(assetid) DO UPDATE SET
        market_hash_name = excluded.market_hash_name,
        name = excluded.name,
@@ -112,6 +121,9 @@ export function upsertItems(items: ItemRow[]): void {
        tradable = excluded.tradable,
        marketable = excluded.marketable,
        raw = excluded.raw,
+       own_float = excluded.own_float,
+       own_seed = excluded.own_seed,
+       own_stickers = excluded.own_stickers,
        updated_at = excluded.updated_at`,
   )
   const tx = db.transaction((rows: ItemRow[]) => rows.forEach((r) => stmt.run(r)))
@@ -133,6 +145,9 @@ export interface ItemRow {
   tradable: number
   marketable: number
   raw: string
+  own_float: number | null
+  own_seed: number | null
+  own_stickers: string | null
   updated_at: string
 }
 
