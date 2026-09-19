@@ -6,6 +6,9 @@ import { clearSession, loadSession, saveSession, upsertItems } from './db'
 
 export const APPID = 730
 export const CONTEXTID = '2'
+// Steam currency codes: 1 = USD, 3 = EUR. The account sells in EUR and the
+// whole UI prices in euros, so query Steam in EUR by default.
+export const CURRENCY_EUR = 3
 
 const community = new SteamCommunity()
 
@@ -381,7 +384,7 @@ async function fetchText(url: string, qs: Record<string, unknown> = {}, retries 
   throw lastErr ?? new Error('HTTP error 429')
 }
 
-export async function priceOverview(hashName: string, currency = 1): Promise<SteamPriceOverview> {
+export async function priceOverview(hashName: string, currency = CURRENCY_EUR): Promise<SteamPriceOverview> {
   const text = await fetchText('https://steamcommunity.com/market/priceoverview/', {
     appid: APPID,
     currency,
@@ -408,7 +411,7 @@ export interface MarketItem {
   buy_quantity: number
 }
 
-export function marketItemDetail(hashName: string, currency = 1): Promise<MarketItem> {
+export function marketItemDetail(hashName: string, currency = CURRENCY_EUR): Promise<MarketItem> {
   return new Promise<MarketItem>((resolve, reject) => {
     community.getMarketItem(APPID, hashName, currency, (err, item: CMarketItem) => {
       if (err) {
