@@ -107,9 +107,34 @@ marketplaces. Background sync jobs with throttling.
 
 ### Outstanding (next milestones)
 
-- Buy depth via `/market/itemordershistogram` (needs `item_nameid`).
-- CSFloat inspect for float value / stickers on tracked items.
-- Compare view: Steam order book vs cash-out marketplaces, net after fees.
+- Watchlist alerts ("floor dropped below your ask").
+- CSFloat provider niceties: keyed rate limits, sticker passthrough
+  (payload exposes float/seed/keychains today; sticker blobs are not yet
+  populated by CSFloat).
+
+## Phase 1.5 — Compare & liquidity (P1-B, done in the `compare` view)
+
+What shipped with the P1-B feature (`feat/phase1b-compare-liquidity`):
+
+- **Buy depth for Steam** — the classic listings page is now a React SSR app
+  with no `Market_LoadOrderSpread` globals, and `itemordershistogram` no
+  longer has a public `item_nameid` source. `marketOrderSpread` pulls the
+  listing page and decodes the order book from its `renderContext`
+  react-query cache (`decodeSsrOrderbook` in `src/server/orderbook.ts`,
+  unit-tested). Falls back to `priceoverview` when an item has no live
+  orders (all-null snapshot).
+- **Float / paint seed reference** — CSFloat in-bundle float + paint seed
+  stored per snapshot and rendered in the grid's "market ref" row.
+- **Compare view** — Steam floor (net after 5%+10% Steam fees) vs CSFloat
+  (net after 2% seller fee), both converted to USD, with the winning venue
+  verdict. `/api/compare?hash=` builds it from the latest snapshots.
+- **Currency fix** — provider prices are annotated by currency (Steam EUR,
+  CSFloat USD) and nets are converted via `FX_EUR_USD` instead of being
+  mislabeled as a single currency.
+- **Steam currency fixed** — market queries use `currency=3` (EUR) after
+  the USD-defaulting regression was found.
+- Unit test suite (vitest) for fee math, price parsing, and the SSR
+  orderbook decoder.
 
 ## Phase 2 — Listing management (semi-auto)
 

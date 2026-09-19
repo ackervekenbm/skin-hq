@@ -14,12 +14,13 @@ Vite frontend (`src/client/`), shared types in `src/types/`.
 ```bash
 npm install       # install deps (uses package-lock.json, commit it)
 npm run build     # = typecheck && lint && vite build && tsup server  ← the verify step
+npm test          # vitest unit tests (tests/, node env)
 ```
 
-There is **no unit-test suite**. `npm run build` is the required
-verification for every change. CI runs the `check` job
-(`npm ci && npm run build`) on every PR, and a green `check` is required to
-merge.
+`npm run build` is the required verification for every change; run `npm test`
+when you touch server logic (fee math, price parsing, the SSR orderbook
+decode). CI runs the `check` job (`npm ci && npm run build`) on every PR, and
+a green `check` is required to merge.
 
 ## Issue-first workflow (MANDATORY)
 
@@ -58,10 +59,14 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   endpoints) go through the library's `httpRequestPost`/`httpRequestGet` so
   the cookie jar is always in play. Session cookies are stored encrypted
   (AES-256-GCM, key from `SKINHQ_SESSION_KEY` env).
-- `src/server/price.ts` — pluggable price providers. Steam provider uses
-  `getMarketItem()` (auto commodity/non-commodity) + `priceoverview`;
+- `src/server/price.ts` — pluggable price providers. Steam provider
+  combines `priceoverview` with the SSR orderbook (`marketOrderSpread`);
   CSFloat provider is a best-effort raw fetch. Provider interface:
   `{ name, getItem(hash) }`.
+- `src/server/orderbook.ts` — pure decoder for the order book that Steam's
+  React SSR listing page embeds in its `renderContext` payload (the classic
+  `Market_LoadOrderSpread` HTML globals and the `itemordershistogram`
+  endpoint that needs `item_nameid` are both gone).
 - `src/client/` — React UI. The Phase 0 spike harness (login, inventory,
   prices, sell/cancel) doubles as the seed of the Phase 1 inventory grid.
 - `src/types/steamcommunity.d.ts` — ambient declarations for
