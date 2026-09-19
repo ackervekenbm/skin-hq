@@ -41,22 +41,6 @@ declare module 'steamcommunity' {
     descriptions?: Array<{ type: string | number; value: string; color?: string }>
   }
 
-  interface CMarketItem {
-    commodity: boolean
-    commodityID: number
-    medianSalePrices: { hour: Date; price: number; quantity: number }[] | null
-    quantity: number
-    buyQuantity: number
-    lowestPrice: number
-    highestBuyOrder: number
-    firstAsset: CEconItem | null
-    assets: Record<string, CEconItem> | null
-  }
-
-  interface MarketItemCallback {
-    (err: Error | null, item: CMarketItem): void
-  }
-
   interface HttpOptions {
     uri?: string
     url?: string
@@ -96,8 +80,6 @@ declare module 'steamcommunity' {
       language: string,
       callback: (err: Error | null, inventory: CEconItem[], currencies: unknown[], totalCount: number) => void,
     ): void
-    getMarketItem(appid: number, hashName: string, callback: MarketItemCallback): void
-    getMarketItem(appid: number, hashName: string, currency: number, callback: MarketItemCallback): void
     httpRequest(uri: string | HttpOptions, options: HttpOptions, callback: HttpCallback, source?: string): void
     httpRequest(uri: string, callback: HttpCallback): void
     httpRequestGet(uri: string, options: HttpOptions, callback: HttpCallback, source?: string): void
@@ -108,7 +90,7 @@ declare module 'steamcommunity' {
     on(event: string | symbol, listener: (...args: unknown[]) => void): this
   }
 
-  export type { CEconItem, CMarketItem, SteamID }
+  export type { CEconItem, SteamID }
   const SteamCommunity: new (options?: { userAgent?: string; localAddress?: string; request?: unknown }) => SteamCommunityClass
   export default SteamCommunity
 }
