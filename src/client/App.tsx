@@ -16,6 +16,12 @@ interface GridPrice {
   lowest_cents: number | null
   median_cents: number | null
   volume: number | null
+  sell_count: number | null
+  buy_count: number | null
+  highest_buy_cents: number | null
+  float_value: number | null
+  paint_seed: number | null
+  stickers: string | null
   had_error: number
   note?: string | null
   fetched_at: string
@@ -51,6 +57,40 @@ interface GridResponse {
   items: GridItem[]
 }
 
+interface StickerRef {
+  name: string
+  slot: number
+}
+
+interface CompareSide {
+  provider: 'steam' | 'csfloat'
+  currency: 'EUR' | 'USD'
+  lowest_cents: number | null
+  net_cents: number | null
+  volume: number | null
+  sell_count: number | null
+  buy_count: number | null
+  highest_buy_cents: number | null
+  float_value: number | null
+  paint_seed: number | null
+  stickers: StickerRef[] | null
+  error?: string
+  fetched_at: string | null
+}
+
+interface CompareRow {
+  hash: string
+  name: string
+  icon_url: string
+  listed: boolean
+  listing_price_cents: number | null
+  steam: CompareSide
+  csfloat: CompareSide | null
+  netUsd: { steam: number | null; csfloat: number | null }
+  deltaPercent: number | null
+  bestVenue: 'steam' | 'csfloat' | null
+}
+
 interface LogLine {
   kind: 'ok' | 'warn' | 'err'
   text: string
@@ -75,6 +115,21 @@ function formatAmount(cents: number, currency: 'EUR' | 'USD'): string {
 function formatGridPrice(p: GridPrice | null | undefined): string {
   if (!p || p.lowest_cents == null) return '—'
   return formatAmount(p.lowest_cents, p.provider === 'csfloat' ? 'USD' : 'EUR')
+}
+
+function formatFloat(f: number | null | undefined): string {
+  if (f == null) return '—'
+  return f.toFixed(4)
+}
+
+function parseStickers(raw: string | null | undefined): StickerRef[] {
+  if (!raw) return []
+  try {
+    const arr = JSON.parse(raw) as StickerRef[]
+    return Array.isArray(arr) ? arr : []
+  } catch {
+    return []
+  }
 }
 
 function relTime(iso: string | null | undefined): string {
@@ -127,6 +182,8 @@ export default function App() {
   const [groupByRarity, setGroupByRarity] = useState(true)
   const [listedOnly, setListedOnly] = useState(false)
   const [sellPrices, setSellPrices] = useState<Record<string, string>>({})
+  const [compare, setCompare] = useState<CompareRow | null>(null)
+  const [compareLoading, setCompareLoading] = useState(false)
   const [log, setLog] = useState<LogLine[]>([])
 
   const pushLog = useCallback((kind: LogLine['kind'], text: string) => {
@@ -244,6 +301,26 @@ export default function App() {
     }
   }, [pushLog])
 
+  const loadCompare = useCallback(
+    async (hash: string) => {
+      setCompareLoading(true)
+      try {
+        const r = await api<{ compare: CompareRow | null }>(`/api/compare?hash=${encodeURIComponent(hash)}`)
+        setCompare(r.compare)
+      } catch (err) {
+        pushLog('err', `compare: ${(err as Error).message}`)
+      } finally {
+        setCompareLoading(false)
+      }
+    },
+    [pushLog],
+  )
+
+  async function openCompare(hash: string) {
+    setCompare(null)
+    await loadCompare(hash)
+  }
+
   async function syncNow() {
     if (!status?.loggedIn) {
       pushLog('err', 'sync: sign in to Steam first')
@@ -311,6 +388,9 @@ export default function App() {
     const wear = wearOf(item.market_hash_name)
     const st = isStatTrak(item.name, item.market_hash_name)
     const listing = item.listing
+    const steam = item.prices.steam
+    const csfloat = item.prices.csfloat
+    const stickers = parseStickers(csfloat?.stickers)
     return (
       <article className="item-card" key={item.assetid}>
         <div className="c-title">{baseName(item.name)}</div>
@@ -324,13 +404,27 @@ export default function App() {
         <div className="c-details">
           <div className="c-row">
             <span className="k">Steam</span>
-            <span className="v">{formatGridPrice(item.prices.steam)}</span>
-            {item.prices.steam?.volume != null && <span className="vol">×{item.prices.steam.volume}</span>}
+            <span className="v">{formatGridPrice(steam)}</span>
+            {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
           </div>
+          {steam?.highest_buy_cents != null && (
+            <div className="c-row sub">
+              <span className="k">Buy depth</span>
+              <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
+              {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
+            </div>
+          )}
           <div className="c-row">
             <span className="k">CSFloat</span>
-            <span className="v">{formatGridPrice(item.prices.csfloat)}</span>
+            <span className="v">{formatGridPrice(csfloat)}</span>
           </div>
+          {(csfloat?.float_value != null || stickers.length > 0) && (
+            <div className="c-row sub">
+              <span className="k">Market ref</span>
+              <span className="v">{csfloat?.float_value != null ? `fv ${formatFloat(csfloat.float_value)}${steam ? '' : ''}` : ''}</span>
+              {stickers.length > 0 && <span className="vol">{stickers.length} sticker</span>}
+            </div>
+          )}
           <div className="c-row">
             <span className="k">Status</span>
             <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
@@ -339,6 +433,9 @@ export default function App() {
           </div>
         </div>
         <div className="c-actions">
+          <button className="ghost" onClick={() => void openCompare(item.market_hash_name)} disabled={compareLoading}>
+            Compare
+          </button>
           <input
             placeholder="Sell €"
             value={sellPrices[item.assetid] ?? ''}
@@ -442,6 +539,113 @@ export default function App() {
         )}
         {!grid?.sync.running && grid?.sync.last.prices && <span className="muted">prices up to {relTime(grid.sync.last.prices)}</span>}
       </section>
+
+      {compare && (
+        <section className="card compare">
+          <div className="compare-head">
+            <div>
+              <h2>
+                Compare <span className="mono">{baseName(compare.name)}</span>
+              </h2>
+              <p className="muted">
+                Steam wallet after ~15% fee vs CSFloat cash-out after 2% fee ({compare.netUsd.steam != null && compare.netUsd.csfloat != null ? 'net in USD' : 'net in native currency'}).
+              </p>
+            </div>
+            <button className="ghost" onClick={() => setCompare(null)}>
+              Close
+            </button>
+          </div>
+          {compare.bestVenue && compare.deltaPercent != null && (
+            <p className="verdict">
+              {compare.bestVenue === 'csfloat'
+                ? `CSFloat nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than Steam.`
+                : `Steam nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than CSFloat (before wallet-vs-cash trade-offs).`}
+            </p>
+          )}
+          <div className="compare-cols">
+            <div className="compare-col">
+              <h3>Steam ({compare.listed ? 'listed' : 'not listed'})</h3>
+              <table>
+                <tbody>
+                  <tr>
+                    <td>Floor (buyer pays)</td>
+                    <td>{compare.steam.lowest_cents != null ? formatAmount(compare.steam.lowest_cents, 'EUR') : '—'}</td>
+                  </tr>
+                  <tr>
+                    <td>Volume 24h</td>
+                    <td>{compare.steam.volume ?? '—'}</td>
+                  </tr>
+                  <tr>
+                    <td>Top buy order</td>
+                    <td>{compare.steam.highest_buy_cents != null ? formatAmount(compare.steam.highest_buy_cents, 'EUR') : '—'}</td>
+                  </tr>
+                  <tr>
+                    <td>Buy order quantity</td>
+                    <td>{compare.steam.buy_count ?? '—'}</td>
+                  </tr>
+                  <tr className="net">
+                    <td>Net after ~15% fee</td>
+                    <td>{compare.steam.net_cents != null ? formatAmount(compare.steam.net_cents, 'EUR') : '—'}</td>
+                  </tr>
+                  {compare.steam.error && (
+                    <tr>
+                      <td colSpan={2} className="muted">
+                        {compare.steam.error}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="compare-col">
+              <h3>CSFloat cash-out</h3>
+              {compare.csfloat ? (
+                <table>
+                  <tbody>
+                    <tr>
+                      <td>Floor (buyer pays)</td>
+                      <td>{compare.csfloat.lowest_cents != null ? formatAmount(compare.csfloat.lowest_cents, 'USD') : '—'}</td>
+                    </tr>
+                    <tr>
+                      <td>Float ref</td>
+                      <td>{formatFloat(compare.csfloat.float_value)}</td>
+                    </tr>
+                    <tr>
+                      <td>Paint seed</td>
+                      <td>{compare.csfloat.paint_seed ?? '—'}</td>
+                    </tr>
+                    <tr>
+                      <td>Stickers</td>
+                      <td>
+                        {compare.csfloat.stickers?.length
+                          ? compare.csfloat.stickers.map((s) => (s.slot > 0 ? `[${s.slot}] ` : '') + s.name).join(', ')
+                          : '—'}
+                      </td>
+                    </tr>
+                    <tr className="net">
+                      <td>Net after 2% fee</td>
+                      <td>{compare.csfloat.net_cents != null ? formatAmount(compare.csfloat.net_cents, 'USD') : '—'}</td>
+                    </tr>
+                    {compare.csfloat.error && (
+                      <tr>
+                        <td colSpan={2} className="muted">
+                          {compare.csfloat.error}
+                        </td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              ) : (
+                <p className="muted">No CSFloat data synced for this item yet.</p>
+              )}
+            </div>
+          </div>
+          <p className="muted footnote">
+            Steam prices in EUR, CSFloat in USD; nets converted with a fixed rate for comparison. Steam proceeds stay in your
+            wallet (not cash); CSFloat is a real cash-out.
+          </p>
+        </section>
+      )}
 
       {!!grid?.sync.errors.length && (
         <section className="card sync-errors">

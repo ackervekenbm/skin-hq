@@ -39,6 +39,10 @@ db.exec(`
       volume INTEGER,
       sell_count INTEGER,
       buy_count INTEGER,
+      highest_buy_cents INTEGER,
+      float_value REAL,
+      paint_seed INTEGER,
+      stickers TEXT,
       had_error INTEGER NOT NULL DEFAULT 0,
       note TEXT,
       fetched_at TEXT NOT NULL
@@ -54,6 +58,17 @@ db.exec(`
       updated_at TEXT NOT NULL
     );
   `)
+
+  // Migrations for pre-P1-B databases: add the liquidity/float columns that
+  // the original price_snapshots table did not have. Idempotent.
+  const cols = (db.prepare('PRAGMA table_info(price_snapshots)').all() as Array<{ name: string }>).map((c) => c.name)
+  const addCol = (name: string, ddl: string): void => {
+    if (!cols.includes(name)) db.exec(`ALTER TABLE price_snapshots ADD COLUMN ${ddl}`)
+  }
+  addCol('highest_buy_cents', 'highest_buy_cents INTEGER')
+  addCol('float_value', 'float_value REAL')
+  addCol('paint_seed', 'paint_seed INTEGER')
+  addCol('stickers', 'stickers TEXT')
 
 export interface StoredSession {
   accountName: string
@@ -129,6 +144,10 @@ export interface PriceSnapshotInput {
   volume?: number | null
   sell_count?: number | null
   buy_count?: number | null
+  highest_buy_cents?: number | null
+  float_value?: number | null
+  paint_seed?: number | null
+  stickers?: string | null
   had_error?: number
   note?: string | null
 }
@@ -149,8 +168,8 @@ export interface MyListingRow {
 export function insertPriceSnapshot(input: PriceSnapshotInput): void {
   db.prepare(
     `INSERT INTO price_snapshots
-       (market_hash_name, provider, lowest_cents, median_cents, volume, sell_count, buy_count, had_error, note, fetched_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       (market_hash_name, provider, lowest_cents, median_cents, volume, sell_count, buy_count, highest_buy_cents, float_value, paint_seed, stickers, had_error, note, fetched_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
     input.market_hash_name,
     input.provider,
@@ -159,6 +178,10 @@ export function insertPriceSnapshot(input: PriceSnapshotInput): void {
     input.volume ?? null,
     input.sell_count ?? null,
     input.buy_count ?? null,
+    input.highest_buy_cents ?? null,
+    input.float_value ?? null,
+    input.paint_seed ?? null,
+    input.stickers ?? null,
     input.had_error ?? 0,
     input.note ?? null,
     new Date().toISOString(),
@@ -168,7 +191,7 @@ export function insertPriceSnapshot(input: PriceSnapshotInput): void {
 export function latestPriceSnapshots(): { byItem: Map<string, Map<string, PriceSnapshotRow>>; latestAt: string | null } {
   const rows = db
     .prepare(
-      `SELECT market_hash_name, provider, lowest_cents, median_cents, volume, sell_count, buy_count, had_error, note, fetched_at
+      `SELECT market_hash_name, provider, lowest_cents, median_cents, volume, sell_count, buy_count, highest_buy_cents, float_value, paint_seed, stickers, had_error, note, fetched_at
        FROM price_snapshots snap
        WHERE fetched_at = (
          SELECT MAX(fetched_at) FROM price_snapshots

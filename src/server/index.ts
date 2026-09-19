@@ -6,6 +6,7 @@ import * as steam from './steam'
 import { comparePrices } from './price'
 import { listItems } from './db'
 import { buildGrid, sync } from './sync'
+import { buildCompare } from './compare'
 
 const app = express()
 app.use(express.json())
@@ -85,6 +86,15 @@ app.get('/api/items', (_req, res) => {
 
 app.get('/api/grid', (_req, res) => {
   res.json(buildGrid())
+})
+
+app.get('/api/compare', (req, res) => {
+  const hash = typeof req.query.hash === 'string' ? req.query.hash : ''
+  if (!hash) {
+    res.status(400).json({ error: 'hash query param is required' })
+    return
+  }
+  res.json({ compare: buildCompare(hash) })
 })
 
 app.post('/api/sync', async (_req, res) => {

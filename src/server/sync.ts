@@ -6,7 +6,7 @@ import {
   replaceMyListings,
   type PriceSnapshotRow,
 } from './db'
-import { priceOverview } from './steam'
+import type { ItemPrice } from './price'
 import { providers } from './price'
 import * as steam from './steam'
 
@@ -224,57 +224,63 @@ class SyncEngine {
     this.phase = 'prices'
     this.current = 0
     this.total = toPrice.length
-    const csfloat = providers.find((p) => p.name === 'csfloat')
     let okCount = 0
     let consecutive429 = 0
+    let aborted = false
+
+    const run = providers.length > 0
+    if (!run) this.pushError('prices: no price providers configured')
 
     for (const hash of toPrice) {
       this.current++
-      try {
-        const ov = await priceOverview(hash)
-        consecutive429 = 0
+      let hashOk = false
+      for (const provider of providers) {
+        let res: ItemPrice
+        try {
+          res = await provider.getItem(hash)
+        } catch (err) {
+          res = { provider: provider.name, currency: 'EUR', lowest_cents: null, error: (err as Error).message }
+        }
+        if (res.error) {
+          this.pushError(`${provider.name} ${hash}: ${res.error}`)
+          console.warn(`[sync] ${provider.name} ${hash} failed`, res.error)
+          if (/429/.test(res.error)) {
+            consecutive429++
+            if (consecutive429 >= PRICE_429_ABORT) {
+              this.pushError(`prices: Steam rate-limited after ${consecutive429} straight 429s — price refresh aborted`)
+              console.warn(`[sync] prices: ${consecutive429} straight 429s — aborting price phase`)
+              aborted = true
+              break
+            }
+          } else {
+            consecutive429 = 0
+          }
+        } else {
+          consecutive429 = 0
+          if (provider.name === 'steam') hashOk = true
+        }
         insertPriceSnapshot({
           market_hash_name: hash,
-          provider: 'steam',
-          lowest_cents: ov.lowest_cents,
-          median_cents: ov.success ? ov.median_cents : null,
-          volume: ov.volume,
-          had_error: ov.success ? 0 : 1,
-          note: ov.success ? undefined : 'no listing data',
+          provider: provider.name,
+          lowest_cents: res.lowest_cents,
+          median_cents: res.median_cents ?? null,
+          volume: res.volume,
+          sell_count: res.sell_count,
+          buy_count: res.buy_count,
+          highest_buy_cents: res.highest_buy_cents,
+          float_value: res.float_value,
+          paint_seed: res.paint_seed,
+          stickers: res.stickers ? JSON.stringify(res.stickers) : null,
+          had_error: res.error ? 1 : 0,
+          note: res.error,
         })
-        if (ov.success) okCount++
-      } catch (err) {
-        consecutive429++
-        this.pushError(`price ${hash}: ${(err as Error).message}`)
-        console.warn(`[sync] price ${hash} failed`, (err as Error).message)
-        if (consecutive429 >= PRICE_429_ABORT && /429/.test((err as Error).message)) {
-          this.pushError(`prices: Steam rate-limited after ${consecutive429} straight 429s — price refresh aborted`)
-          console.warn(`[sync] prices: ${consecutive429} straight 429s — aborting price phase`)
-          break
-        }
       }
-
-      if (csfloat) {
-        try {
-          const res = await csfloat.getItem(hash)
-          insertPriceSnapshot({
-            market_hash_name: hash,
-            provider: 'csfloat',
-            lowest_cents: res.lowest_cents,
-            volume: res.volume,
-            had_error: res.error ? 1 : 0,
-            note: res.error,
-          })
-        } catch (err) {
-          this.pushError(`csfloat ${hash}: ${(err as Error).message}`)
-        }
-      }
-
+      if (aborted) break
+      if (hashOk) okCount++
       await sleep(PRICE_DELAY_MS)
     }
 
     this.last.prices = new Date().toISOString()
-    const aborted = consecutive429 >= PRICE_429_ABORT
     console.info(
       `[sync] prices: ${okCount}/${this.current} steam hashes snapshotted in this pass${aborted ? ' (aborted early on 429s)' : ''}, ${candidates.length - toPrice.length} fresh skipped`,
     )

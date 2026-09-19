@@ -474,6 +474,71 @@ button:disabled {
   margin: 4px 0;
 }
 
+.c-row.sub {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.compare-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.compare-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.compare-col h3 {
+  margin: 0 0 8px;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--muted);
+}
+
+.compare-col table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.compare-col td {
+  padding: 4px 6px;
+  border-bottom: 1px dashed var(--border);
+}
+
+.compare-col td:first-child {
+  color: var(--muted);
+  width: 55%;
+}
+
+.compare-col tr.net td {
+  font-weight: 600;
+  color: var(--ok);
+}
+
+.verdict {
+  font-size: 13px;
+  margin: 0 0 10px;
+  color: var(--ok);
+}
+
+.footnote {
+  font-size: 11px;
+  margin: 12px 0 0;
+}
+
+@media (max-width: 720px) {
+  .compare-cols {
+    grid-template-columns: 1fr;
+  }
+}
+
 footer {
   color: var(--muted);
   font-size: 11px;
