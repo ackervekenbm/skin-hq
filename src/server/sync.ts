@@ -29,6 +29,7 @@ export interface GridItem {
   marketable: boolean
   marketable_restriction?: string | null
   rarity: { internal_name: string | null; name: string | null; rank: number } | null
+  own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, PriceSnapshotRow>
   listing: { listingid: string; price_cents: number | null } | null
 }
@@ -326,6 +327,10 @@ export function buildGrid(): GridResponse {
         marketable: i.marketable === 1,
         marketable_restriction: typeof raw.marketable_restriction === 'number' ? String(raw.marketable_restriction) : raw.marketable_restriction,
         rarity: parseRarity(raw),
+        own:
+          i.own_float != null
+            ? { float_value: i.own_float, paint_seed: i.own_seed ?? 0, stickers: i.own_stickers }
+            : null,
         prices: Object.fromEntries(byItem.get(i.market_hash_name) ?? []),
         listing: listing ? { listingid: listing.listingid, price_cents: listing.price_cents } : null,
       }

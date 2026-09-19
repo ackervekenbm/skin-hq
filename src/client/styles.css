@@ -71,6 +71,13 @@ header h1 {
   align-items: center;
 }
 
+.auth-signed-in {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 .auth input,
 .pricebar input,
 .row input {
@@ -242,14 +249,13 @@ button:disabled {
 }
 
 .cards {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   padding: 8px 2px 2px;
 }
 
 .group-head {
-  grid-column: 1 / -1;
   display: flex;
   align-items: baseline;
   gap: 8px;
@@ -274,29 +280,91 @@ button:disabled {
 .item-card {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 12px;
   background: var(--panel-2);
   border: 1px solid var(--border);
   border-radius: 10px;
-  padding: 10px;
+  padding: 14px 16px;
 }
 
 .item-card:hover {
   border-color: #33456e;
 }
 
+.c-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+}
+
+.c-head .c-title {
+  margin: 0;
+  display: inline;
+}
+
+.c-head .stat-badge {
+  flex-shrink: 0;
+}
+
 .c-title {
   font-weight: 600;
-  font-size: 13px;
+  font-size: 15px;
   line-height: 1.3;
-  min-height: 2.6em;
+  overflow-wrap: anywhere;
+}
+
+.c-body {
+  display: grid;
+  grid-template-columns: minmax(240px, 300px) 1fr 1fr minmax(250px, 310px);
+  gap: 18px;
+  align-items: center;
+}
+
+.c-id {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.c-float {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.c-float .k {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.c-float .fv {
+  font-family: var(--mono);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.c-float .vol {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.c-frow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
 }
 
 .c-img {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  height: 110px;
+  width: 120px;
+  height: 92px;
   background: radial-gradient(circle at 50% 35%, #1b2545, #0e1428 72%);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -308,15 +376,8 @@ button:disabled {
   object-fit: contain;
 }
 
-.c-badges {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  min-height: 20px;
-}
-
-.c-badges .wear,
-.c-badges .stat {
+.wear-badge,
+.stat-badge {
   display: inline-block;
   padding: 1px 6px;
   font-size: 10px;
@@ -327,60 +388,95 @@ button:disabled {
   vertical-align: middle;
 }
 
-.c-badges .wear {
+.wear-badge {
   color: var(--accent);
   border: 1px solid var(--border);
+  align-self: flex-start;
 }
 
-.c-badges .stat {
+.stat-badge {
   color: #ffd257;
   background: #4a3c14;
   border: 1px solid #6b5418;
   font-weight: 700;
 }
 
-.c-details {
+.c-sec {
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: 6px;
+  min-width: 0;
+  border-left: 1px solid var(--border);
+  padding-left: 18px;
+}
+
+.c-sec h4 {
+  margin: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
 }
 
 .c-row {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 8px;
+  min-width: 0;
 }
 
 .c-row .k {
   color: var(--muted);
   font-size: 11px;
+  flex-shrink: 0;
 }
 
 .c-row .v {
   font-family: var(--mono);
-  margin-left: auto;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.c-row .v.price {
+  font-weight: 600;
+  font-size: 13px;
 }
 
 .c-row .vol {
   color: var(--muted);
   font-size: 11px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.c-sec.sell {
+  gap: 8px;
+}
+
+.c-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.c-status .price {
+  font-weight: 600;
 }
 
 .c-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
-  margin-top: auto;
 }
 
 .c-actions input {
   flex: 1;
-  min-width: 0;
+  min-width: 110px;
   background: var(--panel);
   border: 1px solid var(--border);
   color: var(--text);
   border-radius: 6px;
-  padding: 6px 8px;
+  padding: 6px 10px;
   font-size: 12px;
 }
 
@@ -479,6 +575,10 @@ button:disabled {
   font-size: 12px;
 }
 
+.c-float .fv.own-float {
+  color: #7bb7ff;
+}
+
 .compare-head {
   display: flex;
   align-items: flex-start;
@@ -531,6 +631,24 @@ button:disabled {
 .footnote {
   font-size: 11px;
   margin: 12px 0 0;
+}
+
+@media (max-width: 900px) {
+  .c-body {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .c-id {
+    align-items: flex-start;
+  }
+
+  .c-sec {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+  }
 }
 
 @media (max-width: 720px) {

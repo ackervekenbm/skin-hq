@@ -4,6 +4,7 @@ import { EAuthSessionGuardType, EAuthTokenPlatformType, LoginSession } from 'ste
 import type { StartSessionResponse } from 'steam-session/dist/interfaces-external'
 import { clearSession, loadSession, saveSession, upsertItems } from './db'
 import { decodeSsrOrderbook } from './orderbook'
+import { inspectFromProperties, type AssetPropertyEntry, type OwnItemFloat } from './floats'
 
 export const APPID = 730
 export const CONTEXTID = '2'
@@ -16,6 +17,7 @@ const community = new SteamCommunity()
 community.on('sessionExpired', () => {
   console.warn('[steam] Session expired on Steam side; clearing stored session')
   clearSession()
+  community.steamID = null
 })
 
 restoreSession()
@@ -35,6 +37,7 @@ function restoreSession(): void {
 export interface AuthStatus {
   loggedIn: boolean
   steamid: string | null
+  accountName?: string | null
   pendingLogin?: LoginGuard | null
 }
 
@@ -60,6 +63,7 @@ export function authStatus(): AuthStatus {
   return {
     loggedIn: !!community.steamID,
     steamid: community.steamID ? community.steamID.getSteamID64() : null,
+    accountName: community.steamID ? (loadSession()?.accountName ?? null) : null,
     pendingLogin: pendingLogin?.guard ?? null,
   }
 }
@@ -166,6 +170,9 @@ export function cancelPendingLogin(): void {
 export function logout(): AuthStatus {
   cancelPendingLogin()
   clearSession()
+  // steamcommunity@3.50.3 has no logOff(); clearing the stored cookies alone
+  // leaves community.steamID set, so nothing reports the session as gone.
+  community.steamID = null
   return { loggedIn: false, steamid: null }
 }
 
@@ -184,7 +191,11 @@ export function httpJson(method: 'get' | 'post', uri: string, extra: Record<stri
       const options = { json: true, ...extra }
       const callback = (err: Error | null, response: { statusCode: number }, body: unknown) => {
         if (err) {
-          if (remaining > 0 && /HTTP error 429/.test(err.message)) {
+          // Steam throttles these endpoints; it reports pacing as explicit
+          // 429s, or as a generic "HTTP error <status>" when the (empty)
+          // body fails to parse — 400 and 500 are the common throttling
+          // wrappers. Back off on all of them.
+          if (remaining > 0 && (/\b429\b/.test(err.message) || /HTTP error (4\d\d|5\d\d)/.test(err.message))) {
             setTimeout(() => attempt(remaining - 1, delay * 2), delay)
             return
           }
@@ -216,6 +227,9 @@ export interface InventoryItem {
   pos: number
   tags?: Array<{ internal_name: string; name: string; category: string }>
   descriptions?: Array<{ type: string | number; value: string; color?: string }>
+  own_float?: number
+  own_seed?: number
+  own_stickers?: string | null
 }
 
 function fetchContext(contextid: string): Promise<CEconItem[]> {
@@ -261,9 +275,68 @@ export async function getInventory(): Promise<{ items: InventoryItem[]; total: n
     console.warn('[inventory] context 16 (listed items) fetch failed, continuing with context 2 only:', (err as Error).message)
   }
 
+  await attachOwnFloats(byId)
+
   const items = [...byId.values()]
   persistItems(items)
   return { items, total: items.length }
+}
+
+// The CS2 inventory JSON served to the page now exposes per-asset
+// "asset_properties" with the self-encoded Item Certificate hex; decode it
+// offline to get exact floats/seeds/stickers for owned items. A failure here
+// must not fail the inventory sync — best-effort.
+async function attachOwnFloats(byId: Map<string, InventoryItem>): Promise<void> {
+  try {
+    const props = await fetchOwnAssetProperties()
+    for (const info of props.values()) {
+      const item = byId.get(info.assetid)
+      if (!item) continue
+      item.own_float = info.float_value
+      item.own_seed = info.paint_seed
+      item.own_stickers =
+        info.stickers.length > 0 || info.keychains.length > 0
+          ? JSON.stringify({ stickers: info.stickers, keychains: info.keychains })
+          : null
+    }
+  } catch (err) {
+    console.warn('[inventory] own-item floats unavailable (best-effort):', (err as Error).message)
+  }
+}
+
+// Pages through the logged-in CS2 inventory JSON capturing asset_properties.
+// Uses the cookie-jar transport (httpJson) so Steam rate-limits apply your
+// session; sequential with a small delay between pages. Both the active
+// (context 2) and listed (context 16) inventories are covered — fits a
+// best-effort pass: a failure on one context still yields the other.
+async function fetchOwnAssetProperties(): Promise<Map<string, OwnItemFloat>> {
+  const result = new Map<string, OwnItemFloat>()
+  const steamid = community.steamID as { getSteamID64(): string }
+  for (const contextid of [CONTEXTID, '16']) {
+    try {
+      await collectContextProps(steamid.getSteamID64(), contextid, result)
+    } catch (err) {
+      console.warn(`[inventory] float properties unavailable for context ${contextid}:`, (err as Error).message)
+    }
+  }
+  return result
+}
+
+async function collectContextProps(steamid64: string, contextid: string, into: Map<string, OwnItemFloat>): Promise<void> {
+  // Steam's asset_properties endpoint is sessions-unfriendly: count=500 trips
+  // its throttle (observed as HTTP 500) which then bleeds into the market
+  // endpoints for that session. Use count=100 and pause before the next
+  // context so normal market access keeps working.
+  const base = `https://steamcommunity.com/inventory/${steamid64}/730/${contextid}?l=english`
+  const resp = await httpJson('get', `${base}&count=100`)
+  const body = resp.body as Record<string, unknown>
+  if (body.success !== 1) return
+  const entries = (body.asset_properties as AssetPropertyEntry[] | undefined) ?? []
+  for (const entry of entries) {
+    const info = inspectFromProperties(entry)
+    if (info) into.set(info.assetid, info)
+  }
+  await sleep(700)
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
@@ -281,6 +354,9 @@ function persistItems(items: InventoryItem[]): void {
       tradable: i.tradable ? 1 : 0,
       marketable: i.marketable ? 1 : 0,
       raw: JSON.stringify(i),
+      own_float: i.own_float ?? null,
+      own_seed: i.own_seed ?? null,
+      own_stickers: i.own_stickers ?? null,
       updated_at: new Date().toISOString(),
     })),
   )

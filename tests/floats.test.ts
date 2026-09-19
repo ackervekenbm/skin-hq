@@ -1,0 +1,63 @@
+import { describe, expect, it } from 'vitest'
+import { inspectFromProperties, ownInspectLink, type AssetPropertyEntry } from '../src/server/floats'
+
+// Real payload observed from Steam's CS2 inventory JSON for a logged-in
+// account: asset_properties carry the pattern template (1), wear rating (2)
+// and the item certificate hex (6) that self-encodes the inspect link.
+const MP5_AGENT_ENTRY: AssetPropertyEntry = {
+  appid: 730,
+  contextid: '2',
+  assetid: '53815383860',
+  asset_properties: [
+    { propertyid: 1, int_value: '332', name: 'Pattern Template' },
+    { propertyid: 2, float_value: '0.272527575492858887', name: 'Wear Rating' },
+    { propertyid: 6, string_value: '88983C261E354089909FA87281A089B88CB03419267C8BC8448AE09EF890B9EB1FF4', name: 'Item Certificate' },
+  ],
+}
+
+describe('inspectFromProperties', () => {
+  it('decodes the item certificate into exact float, seed and stickers', () => {
+    const info = inspectFromProperties(MP5_AGENT_ENTRY)
+    expect(info).not.toBeNull()
+    expect(info!.assetid).toBe('53815383860')
+    expect(info!.float_value).toBeCloseTo(0.2725275754928589, 12)
+    expect(info!.paint_seed).toBe(332)
+    expect(info!.paint_index).toBe(1274)
+    expect(info!.stickers).toEqual([])
+    expect(info!.keychains).toEqual([])
+  })
+
+  it('falls back to the raw wear/pattern property values when the hex is missing', () => {
+    const entry: AssetPropertyEntry = {
+      assetid: 'x',
+      asset_properties: [
+        { propertyid: 2, float_value: '0.12345678', name: 'Wear Rating' },
+        { propertyid: 1, int_value: '7', name: 'Pattern Template' },
+      ],
+    }
+    expect(inspectFromProperties(entry)).toEqual({
+      assetid: 'x',
+      float_value: 0.12345678,
+      paint_seed: 7,
+      paint_index: null,
+      stickers: [],
+      keychains: [],
+    })
+  })
+
+  it('returns null when the item has no float data at all', () => {
+    expect(inspectFromProperties({ assetid: 'y', asset_properties: [] })).toBeNull()
+    expect(
+      inspectFromProperties({
+        assetid: 'z',
+        asset_properties: [{ propertyid: 2, float_value: 'nope' }],
+      }),
+    ).toBeNull()
+  })
+})
+
+describe('ownInspectLink', () => {
+  it('builds the steam://run preview link the serializer expects', () => {
+    expect(ownInspectLink('ABCDEF')).toBe('steam://run/730//+csgo_econ_action_preview%20ABCDEF')
+  })
+})
