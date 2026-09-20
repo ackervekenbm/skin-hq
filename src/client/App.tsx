@@ -429,11 +429,19 @@ export default function App() {
     const charmPattern = ownStickersRaw?.keychains?.length ? ownStickersRaw.keychains[0].pattern : null
     const ownStickersArr =
       ownStickersRaw && Array.isArray(ownStickersRaw.stickers)
-        ? (ownStickersRaw.stickers as Array<{ stickerId: number; slot: number; wear?: number; name?: string | null }>)
+        ? (ownStickersRaw.stickers as Array<{ stickerId: number; slot: number; wear?: number; name?: string | null; image?: string | null }>)
         : []
     const ownKeychainsArr =
       ownStickersRaw && Array.isArray(ownStickersRaw.keychains)
-        ? (ownStickersRaw.keychains as Array<{ stickerId: number; slot: number; pattern?: number; name?: string | null }>)
+        ? (ownStickersRaw.keychains as Array<{
+            stickerId: number
+            slot: number
+            pattern?: number
+            name?: string | null
+            image?: string | null
+            steam_cents?: number | null
+            csfloat_cents?: number | null
+          }>)
         : []
     const showFloat = isCharm ? false : item.own ? item.own.float_value != null : csfloat?.float_value != null
     const showSeed = isCharm ? false : item.own ? item.own.paint_seed != null : csfloat?.paint_seed != null
@@ -543,17 +551,29 @@ export default function App() {
             <span className="c-subrows-label">Attached</span>
             {ownKeychainsArr.map((k, i) => (
               <div className="c-subrow" key={`ck-${k.stickerId}-${i}`}>
-                <span className="k">Charm</span>
-                <span className="fv">{k.name ?? `#${k.stickerId}`}</span>
-                {k.pattern != null && <span className="sub-meta">pattern {k.pattern}</span>}
+                {k.image && <img className="sub-img" src={k.image} alt="" loading="lazy" />}
+                <div className="sub-info">
+                  <span className="sub-name">{k.name ?? `#${k.stickerId}`}</span>
+                  {k.pattern != null && <span className="sub-meta">pattern {k.pattern}</span>}
+                </div>
+                {(k.steam_cents != null || k.csfloat_cents != null) && (
+                  <div className="sub-worth">
+                    {k.steam_cents != null && <span className="sub-w">{formatAmount(k.steam_cents, 'EUR')}</span>}
+                    {k.csfloat_cents != null && <span className="sub-w">{formatAmount(k.csfloat_cents, 'USD')}</span>}
+                  </div>
+                )}
               </div>
             ))}
             {ownStickersArr.map((s, i) => (
               <div className="c-subrow" key={`cs-${s.stickerId}-${i}`}>
-                <span className="k">Sticker</span>
-                <span className="fv">{s.name ?? `#${s.stickerId}`}</span>
-                <span className="sub-meta">slot {s.slot}</span>
-                {s.wear != null && s.wear > 0 && <span className="sub-meta worn">worn</span>}
+                {s.image && <img className="sub-img" src={s.image} alt="" loading="lazy" />}
+                <div className="sub-info">
+                  <span className="sub-name">{s.name ?? `#${s.stickerId}`}</span>
+                  <span className="sub-meta">
+                    slot {s.slot}
+                    {s.wear != null && s.wear > 0 ? ' · worn' : ''}
+                  </span>
+                </div>
               </div>
             ))}
           </div>

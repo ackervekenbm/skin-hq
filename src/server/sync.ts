@@ -75,6 +75,47 @@ const RARITY_CLASS: Record<string, RarityClass> = {
   Rarity_Default_Weapon: { key: 'stock', label: 'Stock', rank: 8 },
 }
 
+// Market names of charms mounted on owned weapons (the attached charm decodes
+// to a keychain entry whose name maps to a "Charm | <name>" market listing).
+export function attachedItemHashes(ownStickersRows: Array<string | null>): string[] {
+  const hashes = new Set<string>()
+  for (const raw of ownStickersRows) {
+    if (!raw) continue
+    try {
+      const parsed = JSON.parse(raw) as { keychains?: Array<{ name?: string | null }> }
+      const name = parsed?.keychains?.[0]?.name
+      if (name) hashes.add(`Charm | ${name}`)
+    } catch {
+      /* ignore unparseable rows */
+    }
+  }
+  return [...hashes]
+}
+
+function enrichOwnStickers(
+  raw: string | null,
+  byItem: Map<string, Map<string, PriceSnapshotRow>>,
+): string | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as {
+      stickers?: unknown[]
+      keychains?: Array<{ name?: string | null; steam_cents?: number | null; csfloat_cents?: number | null }>
+    }
+    const keychain = parsed?.keychains?.[0]
+    if (keychain?.name) {
+      const snap = byItem.get(`Charm | ${keychain.name}`)
+      if (snap) {
+        keychain.steam_cents = snap.get('steam')?.lowest_cents ?? null
+        keychain.csfloat_cents = snap.get('csfloat')?.lowest_cents ?? null
+      }
+    }
+    return JSON.stringify(parsed)
+  } catch {
+    return raw
+  }
+}
+
 function parseRarity(raw: InventoryRawFields): GridItem['rarity'] {
   const tag = raw.tags?.find((t) => t.category === 'Rarity')
   if (!tag?.internal_name) return null
@@ -207,6 +248,12 @@ class SyncEngine {
           .map((i) => i.market_hash_name),
       ),
     ].filter((h): h is string => !!h)
+
+    // Attached charms/stickers don't appear in the inventory listing (they
+    // live on the weapon they are mounted to). Price them under their own
+    // market name so the grid can show a "worth" on the weapon card.
+    const attachedCharmHashes = attachedItemHashes(listItems().map((i) => i.own_stickers ?? null))
+    for (const hash of attachedCharmHashes) if (!candidates.includes(hash)) candidates.push(hash)
     const toPrice = candidates
       .filter(stale)
       .sort((a, b) => {
@@ -329,7 +376,7 @@ export function buildGrid(): GridResponse {
         rarity: parseRarity(raw),
         own:
           i.own_float != null
-            ? { float_value: i.own_float, paint_seed: i.own_seed ?? 0, stickers: i.own_stickers }
+            ? { float_value: i.own_float, paint_seed: i.own_seed ?? 0, stickers: enrichOwnStickers(i.own_stickers, byItem) }
             : null,
         prices: Object.fromEntries(byItem.get(i.market_hash_name) ?? []),
         listing: listing ? { listingid: listing.listingid, price_cents: listing.price_cents } : null,

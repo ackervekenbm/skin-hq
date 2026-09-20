@@ -20,6 +20,7 @@ export interface OwnSticker {
   stickerId: number
   wear?: number
   name?: string | null
+  image?: string | null
 }
 
 export interface OwnKeychain {
@@ -28,6 +29,12 @@ export interface OwnKeychain {
   pattern?: number
   wear?: number
   name?: string | null
+  image?: string | null
+}
+
+export interface AttachedRef {
+  name: string | null
+  image: string | null
 }
 
 export interface OwnItemFloat {
@@ -95,33 +102,37 @@ export function inspectFromProperties(entry: AssetPropertyEntry): OwnItemFloat |
 
 /**
  * Steam's item descriptions carry per-sticker "Sticker: <name>" and (at most
- * one) "Charm: <name>" blocks rendered inside the sticker_info/keychain_info
- * HTML. Each label appears twice in the block (the img title attribute and the
- * text node), so we collect unique labels in order. The inspect decode only
- * yields ids + slots, so names are matched positionally — description order
- * matches Steam's slot order. Best-effort: use the numeric id when a name is
- * missing or has no description block.
+ * one) "Charm: <name>" blocks rendered inside sticker_info/keychain_info HTML
+ * <div>s, each with an <img> pointing at the sticker/charm icon. The inspect
+ * decode only yields ids + slots, so names are matched positionally —
+ * description order matches Steam's slot order. Best-effort: use the numeric
+ * id when a name or image is missing.
  */
-export function namesFromDescriptions(descriptions: Array<{ value?: unknown } | string> | null | undefined): {
-  stickers: string[]
-  keychain: string | null
+export function attachedFromDescriptions(descriptions: Array<{ value?: unknown } | string> | null | undefined): {
+  stickers: AttachedRef[]
+  keychain: AttachedRef | null
 } {
   const text = (descriptions ?? [])
     .map((d) => (typeof d === 'string' ? d : String(d.value ?? '')))
     .join('\n')
-
-  const stickers: string[] = []
-  const seen = new Set<string>()
-  const re = /Sticker:\s*([^"<]{1,120})/g
-  let m: RegExpExecArray | null
-  while ((m = re.exec(text))) {
-    const name = m[1].trim()
-    if (name && !seen.has(name)) {
-      seen.add(name)
-      stickers.push(name)
-    }
+  return {
+    stickers: parseAttachedBlocks(text, 'sticker_info', /Sticker:\s*([^"<]{1,120})/),
+    keychain: parseAttachedBlocks(text, 'keychain_info', /Charm:\s*([^"<]{1,120})/)[0] ?? null,
   }
+}
 
-  const charm = /Charm:\s*([^"<]{1,120})/.exec(text)
-  return { stickers, keychain: charm ? charm[1].trim() : null }
+function parseAttachedBlocks(text: string, marker: string, labelRe: RegExp): AttachedRef[] {
+  const out: AttachedRef[] = []
+  let searchFrom = 0
+  while (true) {
+    const start = text.indexOf(marker, searchFrom)
+    if (start === -1) break
+    const divEnd = text.indexOf('</div>', start)
+    const block = text.slice(start, divEnd === -1 ? text.length : divEnd)
+    const img = /src="([^"]+)"/.exec(block)
+    const label = labelRe.exec(block)
+    out.push({ name: label ? label[1].trim() : null, image: img ? img[1] : null })
+    searchFrom = divEnd === -1 ? text.length : divEnd
+  }
+  return out
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inspectFromProperties, namesFromDescriptions, ownInspectLink, type AssetPropertyEntry } from '../src/server/floats'
+import { attachedFromDescriptions, inspectFromProperties, ownInspectLink, type AssetPropertyEntry } from '../src/server/floats'
 
 // Real payload observed from Steam's CS2 inventory JSON for a logged-in
 // account: asset_properties carry the pattern template (1), wear rating (2)
@@ -78,27 +78,46 @@ const STICKER_CHARM_DESC = [
   },
 ]
 
-describe('namesFromDescriptions', () => {
-  it('extracts sticker names (deduped) and the single charm name from the description blocks', () => {
-    expect(namesFromDescriptions(STICKER_CHARM_DESC)).toEqual({ stickers: ['Lefty (CT)'], keychain: 'Gritty' })
+describe('attachedFromDescriptions', () => {
+  it('extracts sticker name+image and the charm name+image from the description blocks', () => {
+    expect(attachedFromDescriptions(STICKER_CHARM_DESC)).toEqual({
+      stickers: [
+        {
+          name: 'Lefty (CT)',
+          image: 'https://cdn.steamstatic.com/apps/730/icons/econ/stickers/community/sticker_craft/paper_ct_left_hand.91b1beab7e5c986c9961bf6712400eccc89ec02b.png',
+        },
+      ],
+      keychain: {
+        name: 'Gritty',
+        image: 'https://cdn.steamstatic.com/apps/730/icons/econ/keychains/drboom/kc_db_terror.79493deaf354ac51f059600aeb3b6eca98c8b60d.png',
+      },
+    })
   })
 
-  it('extracts multiple sticker names in order', () => {
+  it('extracts multiple sticker name+image pairs in order', () => {
     const twoStickers = [
       {
         type: 'html',
-        value: '<div id="sticker_info"><img title="Sticker: Hope"><br>Sticker: Hope</center></div>',
+        value: '<div id="sticker_info"><img src="https://cdn.example.com/a.png" title="Sticker: Hope"><br>Sticker: Hope</center></div>',
       },
       {
         type: 'html',
-        value: '<div id="sticker_info"><img title="Sticker: Wildfire"><br>Sticker: Wildfire</center></div>',
+        value: '<div id="sticker_info"><img src="https://cdn.example.com/b.png" title="Sticker: Wildfire"><br>Sticker: Wildfire</center></div>',
       },
     ]
-    expect(namesFromDescriptions(twoStickers)).toEqual({ stickers: ['Hope', 'Wildfire'], keychain: null })
+    expect(attachedFromDescriptions(twoStickers).stickers).toEqual([
+      { name: 'Hope', image: 'https://cdn.example.com/a.png' },
+      { name: 'Wildfire', image: 'https://cdn.example.com/b.png' },
+    ])
   })
 
-  it('handles empty or string-only input', () => {
-    expect(namesFromDescriptions(undefined)).toEqual({ stickers: [], keychain: null })
-    expect(namesFromDescriptions([`<br>Sticker: Lights Out</center>`])).toEqual({ stickers: ['Lights Out'], keychain: null })
+  it('handles empty input and block-less text', () => {
+    expect(attachedFromDescriptions(undefined)).toEqual({ stickers: [], keychain: null })
+    expect(attachedFromDescriptions([`<br>Sticker: Lights Out</center>`]).stickers).toEqual([])
+    expect(
+      attachedFromDescriptions([`<div id="sticker_info"><center><br>Sticker: Lights Out</center></div>`]).stickers.map(
+        (s) => s.name,
+      ),
+    ).toEqual(['Lights Out'])
   })
 })

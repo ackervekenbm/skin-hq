@@ -361,7 +361,7 @@ button:disabled {
 .c-subrows {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 6px;
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
@@ -376,31 +376,55 @@ button:disabled {
 
 .c-subrow {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 12px;
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
   font-size: 12px;
 }
 
-.c-subrow .k {
-  color: var(--muted);
-  font-size: 11px;
+.sub-img {
   flex-shrink: 0;
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+  background: radial-gradient(circle at 50% 35%, #1b2545, #0e1428 72%);
+  border: 1px solid var(--border);
+  border-radius: 6px;
 }
 
-.c-subrow .fv {
-  font-family: var(--mono);
+.sub-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.sub-name {
+  font-size: 12px;
+  font-weight: 600;
   overflow-wrap: anywhere;
 }
 
-.c-subrow .sub-meta {
+.sub-meta {
   color: var(--muted);
   font-size: 11px;
+}
+
+.sub-worth {
   margin-left: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  align-items: flex-end;
   flex-shrink: 0;
 }
 
-.c-subrow .sub-meta.worn {
-  color: var(--warn, #d99a3c);
+.sub-w {
+  font-family: var(--mono);
+  font-size: 12px;
 }
 
 .c-img {
