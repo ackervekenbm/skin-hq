@@ -358,6 +358,51 @@ button:disabled {
   gap: 8px;
 }
 
+.c-subrows {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.c-subrows-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.c-subrow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.c-subrow .k {
+  color: var(--muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.c-subrow .fv {
+  font-family: var(--mono);
+  overflow-wrap: anywhere;
+}
+
+.c-subrow .sub-meta {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.c-subrow .sub-meta.worn {
+  color: var(--warn, #d99a3c);
+}
+
 .c-img {
   flex-shrink: 0;
   display: flex;

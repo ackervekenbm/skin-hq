@@ -19,6 +19,7 @@ export interface OwnSticker {
   slot: number
   stickerId: number
   wear?: number
+  name?: string | null
 }
 
 export interface OwnKeychain {
@@ -26,6 +27,7 @@ export interface OwnKeychain {
   stickerId: number
   pattern?: number
   wear?: number
+  name?: string | null
 }
 
 export interface OwnItemFloat {
@@ -89,4 +91,37 @@ export function inspectFromProperties(entry: AssetPropertyEntry): OwnItemFloat |
     stickers: [],
     keychains: [],
   }
+}
+
+/**
+ * Steam's item descriptions carry per-sticker "Sticker: <name>" and (at most
+ * one) "Charm: <name>" blocks rendered inside the sticker_info/keychain_info
+ * HTML. Each label appears twice in the block (the img title attribute and the
+ * text node), so we collect unique labels in order. The inspect decode only
+ * yields ids + slots, so names are matched positionally — description order
+ * matches Steam's slot order. Best-effort: use the numeric id when a name is
+ * missing or has no description block.
+ */
+export function namesFromDescriptions(descriptions: Array<{ value?: unknown } | string> | null | undefined): {
+  stickers: string[]
+  keychain: string | null
+} {
+  const text = (descriptions ?? [])
+    .map((d) => (typeof d === 'string' ? d : String(d.value ?? '')))
+    .join('\n')
+
+  const stickers: string[] = []
+  const seen = new Set<string>()
+  const re = /Sticker:\s*([^"<]{1,120})/g
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text))) {
+    const name = m[1].trim()
+    if (name && !seen.has(name)) {
+      seen.add(name)
+      stickers.push(name)
+    }
+  }
+
+  const charm = /Charm:\s*([^"<]{1,120})/.exec(text)
+  return { stickers, keychain: charm ? charm[1].trim() : null }
 }

@@ -427,6 +427,14 @@ export default function App() {
     const stickerCount = item.own ? ownStickerCount : stickers.length
     const isCharm = /^charm \|/i.test(item.name) || /^charm \|/i.test(item.market_hash_name)
     const charmPattern = ownStickersRaw?.keychains?.length ? ownStickersRaw.keychains[0].pattern : null
+    const ownStickersArr =
+      ownStickersRaw && Array.isArray(ownStickersRaw.stickers)
+        ? (ownStickersRaw.stickers as Array<{ stickerId: number; slot: number; wear?: number; name?: string | null }>)
+        : []
+    const ownKeychainsArr =
+      ownStickersRaw && Array.isArray(ownStickersRaw.keychains)
+        ? (ownStickersRaw.keychains as Array<{ stickerId: number; slot: number; pattern?: number; name?: string | null }>)
+        : []
     const showFloat = isCharm ? false : item.own ? item.own.float_value != null : csfloat?.float_value != null
     const showSeed = isCharm ? false : item.own ? item.own.paint_seed != null : csfloat?.paint_seed != null
     const showIdentity = isCharm || showFloat || showSeed
@@ -529,6 +537,27 @@ export default function App() {
             </div>
           </section>
         </div>
+
+        {!isCharm && (ownStickersArr.length > 0 || ownKeychainsArr.length > 0) && (
+          <div className="c-subrows">
+            <span className="c-subrows-label">Attached</span>
+            {ownKeychainsArr.map((k, i) => (
+              <div className="c-subrow" key={`ck-${k.stickerId}-${i}`}>
+                <span className="k">Charm</span>
+                <span className="fv">{k.name ?? `#${k.stickerId}`}</span>
+                {k.pattern != null && <span className="sub-meta">pattern {k.pattern}</span>}
+              </div>
+            ))}
+            {ownStickersArr.map((s, i) => (
+              <div className="c-subrow" key={`cs-${s.stickerId}-${i}`}>
+                <span className="k">Sticker</span>
+                <span className="fv">{s.name ?? `#${s.stickerId}`}</span>
+                <span className="sub-meta">slot {s.slot}</span>
+                {s.wear != null && s.wear > 0 && <span className="sub-meta worn">worn</span>}
+              </div>
+            ))}
+          </div>
+        )}
       </article>
     )
   }

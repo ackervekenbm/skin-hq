@@ -4,7 +4,7 @@ import { EAuthSessionGuardType, EAuthTokenPlatformType, LoginSession } from 'ste
 import type { StartSessionResponse } from 'steam-session/dist/interfaces-external'
 import { clearSession, loadSession, saveSession, upsertItems } from './db'
 import { decodeSsrOrderbook } from './orderbook'
-import { inspectFromProperties, type AssetPropertyEntry, type OwnItemFloat } from './floats'
+import { inspectFromProperties, namesFromDescriptions, type AssetPropertyEntry, type OwnItemFloat } from './floats'
 
 export const APPID = 730
 export const CONTEXTID = '2'
@@ -292,6 +292,7 @@ async function attachOwnFloats(byId: Map<string, InventoryItem>): Promise<void> 
     for (const info of props.values()) {
       const item = byId.get(info.assetid)
       if (!item) continue
+      attachNames(info, item.descriptions)
       item.own_float = info.float_value
       item.own_seed = info.paint_seed
       item.own_stickers =
@@ -302,6 +303,17 @@ async function attachOwnFloats(byId: Map<string, InventoryItem>): Promise<void> 
   } catch (err) {
     console.warn('[inventory] own-item floats unavailable (best-effort):', (err as Error).message)
   }
+}
+
+// Steam's description blocks name applied stickers ("Sticker: ...") and the
+// mounted charm ("Charm: ..."); match them positionally onto the decoded
+// sticker/keychain entries so the grid can render names offline.
+function attachNames(info: OwnItemFloat, descriptions: InventoryItem['descriptions']): void {
+  const { stickers, keychain } = namesFromDescriptions(descriptions)
+  info.stickers.forEach((s, i) => {
+    s.name = stickers[i] ?? null
+  })
+  if (info.keychains.length > 0) info.keychains[0].name = keychain
 }
 
 // Pages through the logged-in CS2 inventory JSON capturing asset_properties.
