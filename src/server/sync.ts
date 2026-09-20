@@ -100,7 +100,13 @@ function enrichOwnStickers(
   try {
     const parsed = JSON.parse(raw) as {
       stickers?: unknown[]
-      keychains?: Array<{ name?: string | null; steam_cents?: number | null; csfloat_cents?: number | null }>
+      keychains?: Array<{
+        name?: string | null
+        steam_cents?: number | null
+        csfloat_cents?: number | null
+        steam_buy_cents?: number | null
+        steam_buy_count?: number | null
+      }>
     }
     const keychain = parsed?.keychains?.[0]
     if (keychain?.name) {
@@ -108,6 +114,8 @@ function enrichOwnStickers(
       if (snap) {
         keychain.steam_cents = snap.get('steam')?.lowest_cents ?? null
         keychain.csfloat_cents = snap.get('csfloat')?.lowest_cents ?? null
+        keychain.steam_buy_cents = snap.get('steam')?.highest_buy_cents ?? null
+        keychain.steam_buy_count = snap.get('steam')?.buy_count ?? null
       }
     }
     return JSON.stringify(parsed)

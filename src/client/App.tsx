@@ -441,6 +441,8 @@ export default function App() {
             image?: string | null
             steam_cents?: number | null
             csfloat_cents?: number | null
+            steam_buy_cents?: number | null
+            steam_buy_count?: number | null
           }>)
         : []
     const showFloat = isCharm ? false : item.own ? item.own.float_value != null : csfloat?.float_value != null
@@ -551,28 +553,64 @@ export default function App() {
             <span className="c-subrows-label">Attached</span>
             {ownKeychainsArr.map((k, i) => (
               <div className="c-subrow" key={`ck-${k.stickerId}-${i}`}>
-                {k.image && <img className="sub-img" src={k.image} alt="" loading="lazy" />}
-                <div className="sub-info">
-                  <span className="sub-name">{k.name ?? `#${k.stickerId}`}</span>
-                  {k.pattern != null && <span className="sub-meta">pattern {k.pattern}</span>}
+                <div className="sub-head">
+                  <span className="sub-name">Charm | {k.name ?? `#${k.stickerId}`}</span>
                 </div>
-                {(k.steam_cents != null || k.csfloat_cents != null) && (
-                  <div className="sub-worth">
-                    {k.steam_cents != null && <span className="sub-w">{formatAmount(k.steam_cents, 'EUR')}</span>}
-                    {k.csfloat_cents != null && <span className="sub-w">{formatAmount(k.csfloat_cents, 'USD')}</span>}
+                <div className="sub-body">
+                  <div className="c-id">
+                    <div className="c-img">{k.image && <img src={k.image} alt="" loading="lazy" />}</div>
+                    <div className="c-float">
+                      <div className="c-frow">
+                        <span className="k">Pattern</span>
+                        <span className="fv own-float">{k.pattern ?? '—'}</span>
+                      </div>
+                    </div>
                   </div>
-                )}
+                  <section className="c-sec">
+                    <h4>Steam</h4>
+                    <div className="c-row">
+                      <span className="k">Floor</span>
+                      <span className="v price">{k.steam_cents != null ? formatAmount(k.steam_cents, 'EUR') : '—'}</span>
+                    </div>
+                    {k.steam_buy_cents != null && (
+                      <div className="c-row sub">
+                        <span className="k">Buy depth</span>
+                        <span className="v">{formatAmount(k.steam_buy_cents, 'EUR')}</span>
+                        {k.steam_buy_count != null && <span className="vol">×{k.steam_buy_count}</span>}
+                      </div>
+                    )}
+                  </section>
+                  <section className="c-sec">
+                    <h4>CSFloat</h4>
+                    <div className="c-row">
+                      <span className="k">Floor</span>
+                      <span className="v price">{k.csfloat_cents != null ? formatAmount(k.csfloat_cents, 'USD') : '—'}</span>
+                    </div>
+                  </section>
+                </div>
               </div>
             ))}
             {ownStickersArr.map((s, i) => (
               <div className="c-subrow" key={`cs-${s.stickerId}-${i}`}>
-                {s.image && <img className="sub-img" src={s.image} alt="" loading="lazy" />}
-                <div className="sub-info">
-                  <span className="sub-name">{s.name ?? `#${s.stickerId}`}</span>
-                  <span className="sub-meta">
-                    slot {s.slot}
-                    {s.wear != null && s.wear > 0 ? ' · worn' : ''}
-                  </span>
+                <div className="sub-head">
+                  <span className="sub-name">Sticker | {s.name ?? `#${s.stickerId}`}</span>
+                </div>
+                <div className="sub-body">
+                  <div className="c-id">
+                    <div className="c-img">{s.image && <img src={s.image} alt="" loading="lazy" />}</div>
+                    <div className="c-float">
+                      <div className="c-frow">
+                        <span className="k">Slot</span>
+                        <span className="fv">{s.slot}</span>
+                      </div>
+                      {s.wear != null && s.wear > 0 && (
+                        <div className="c-frow">
+                          <span className="k">Wear</span>
+                          <span className="fv">worn</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
                 </div>
               </div>
             ))}

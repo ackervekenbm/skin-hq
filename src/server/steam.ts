@@ -343,17 +343,29 @@ async function fetchOwnAssetProperties(): Promise<Map<string, OwnItemFloat>> {
 async function collectContextProps(steamid64: string, contextid: string, into: Map<string, OwnItemFloat>): Promise<void> {
   // Steam's asset_properties endpoint is sessions-unfriendly: count=500 trips
   // its throttle (observed as HTTP 500) which then bleeds into the market
-  // endpoints for that session. Use count=100 and pause before the next
-  // context so normal market access keeps working.
+  // endpoints for that session. Use count=100 and pause between pages so
+  // normal market access keeps working. Inventories over 100 assets must be
+  // paged — a single request silently drops own-float/sticker/charm data for
+  // the tail (e.g. StatTrak items sorted after the first 100).
   const base = `https://steamcommunity.com/inventory/${steamid64}/730/${contextid}?l=english`
-  const resp = await httpJson('get', `${base}&count=100`)
-  const body = resp.body as Record<string, unknown>
-  if (body.success !== 1) return
-  const entries = (body.asset_properties as AssetPropertyEntry[] | undefined) ?? []
-  for (const entry of entries) {
-    const info = inspectFromProperties(entry)
-    if (info) into.set(info.assetid, info)
+  let startAssetid: string | undefined
+  for (let page = 0; page < 50; page++) {
+    const url = startAssetid ? `${base}&count=100&start_assetid=${startAssetid}` : `${base}&count=100`
+    const resp = await httpJson('get', url)
+    const body = resp.body as Record<string, unknown>
+    if (body.success !== 1) return
+    const entries = (body.asset_properties as AssetPropertyEntry[] | undefined) ?? []
+    for (const entry of entries) {
+      const info = inspectFromProperties(entry)
+      if (info) into.set(info.assetid, info)
+    }
+    const more = (body.more_items as boolean | undefined) ?? false
+    const next = (body.more_start_assetid as string | undefined) ?? (body.last_assetid as string | undefined)
+    if (!more || !next || next === startAssetid) break
+    startAssetid = next
+    await sleep(700)
   }
+  // Pause before the next context (context 2 then 16) as well.
   await sleep(700)
 }
 

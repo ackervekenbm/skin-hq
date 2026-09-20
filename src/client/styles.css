@@ -361,7 +361,7 @@ button:disabled {
 .c-subrows {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   border-top: 1px solid var(--border);
   padding-top: 10px;
 }
@@ -376,55 +376,48 @@ button:disabled {
 
 .c-subrow {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  padding: 6px 10px;
-  font-size: 12px;
-}
-
-.sub-img {
-  flex-shrink: 0;
-  width: 64px;
-  height: 48px;
-  object-fit: contain;
-  background: radial-gradient(circle at 50% 35%, #1b2545, #0e1428 72%);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-}
-
-.sub-info {
-  display: flex;
   flex-direction: column;
-  gap: 2px;
-  min-width: 0;
+  gap: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.c-subrow:hover {
+  border-color: #33456e;
+}
+
+.sub-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
 }
 
 .sub-name {
   font-size: 12px;
   font-weight: 600;
+  flex: 1;
+  min-width: 0;
   overflow-wrap: anywhere;
 }
 
-.sub-meta {
-  color: var(--muted);
-  font-size: 11px;
+.sub-body {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) 1fr 1fr;
+  gap: 12px;
+  align-items: center;
 }
 
-.sub-worth {
-  margin-left: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  align-items: flex-end;
-  flex-shrink: 0;
-}
-
-.sub-w {
-  font-family: var(--mono);
-  font-size: 12px;
+/* The attached item is a mini card, so its icon box stays smaller than the
+   main card's 120x92 but uses the same frame/styling. */
+.c-subrow .c-img {
+  width: 84px;
+  height: 64px;
+  border-radius: 6px;
 }
 
 .c-img {
@@ -703,7 +696,8 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .c-body {
+  .c-body,
+  .sub-body {
     grid-template-columns: 1fr;
     gap: 12px;
   }
