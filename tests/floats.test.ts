@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { inspectFromProperties, ownInspectLink, type AssetPropertyEntry } from '../src/server/floats'
+import { attachedFromDescriptions, inspectFromProperties, ownInspectLink, type AssetPropertyEntry } from '../src/server/floats'
 
 // Real payload observed from Steam's CS2 inventory JSON for a logged-in
 // account: asset_properties carry the pattern template (1), wear rating (2)
@@ -59,5 +59,71 @@ describe('inspectFromProperties', () => {
 describe('ownInspectLink', () => {
   it('builds the steam://run preview link the serializer expects', () => {
     expect(ownInspectLink('ABCDEF')).toBe('steam://run/730//+csgo_econ_action_preview%20ABCDEF')
+  })
+})
+
+// Real description text observed on an item with one applied sticker and a
+// mounted charm: each label appears twice per block (img title + text node).
+const STICKER_CHARM_DESC = [
+  { type: 'html', value: 'Exterior: Field-Tested' },
+  {
+    type: 'html',
+    value:
+      '<br><div id="sticker_info" class="sticker_info" style="..."><center><img width=64 height=48 src="https://cdn.steamstatic.com/apps/730/icons/econ/stickers/community/sticker_craft/paper_ct_left_hand.91b1beab7e5c986c9961bf6712400eccc89ec02b.png" title="Sticker: Lefty (CT)"><br>Sticker: Lefty (CT)</center></div>',
+  },
+  {
+    type: 'html',
+    value:
+      '<br><div id="keychain_info" class="keychain_info" style="..."><center><img width=64 height=48 src="https://cdn.steamstatic.com/apps/730/icons/econ/keychains/drboom/kc_db_terror.79493deaf354ac51f059600aeb3b6eca98c8b60d.png" title="Charm: Gritty"><br>Charm: Gritty</center></div>',
+  },
+]
+
+describe('attachedFromDescriptions', () => {
+  it('extracts sticker name+image and the charm name+image from the description blocks', () => {
+    expect(attachedFromDescriptions(STICKER_CHARM_DESC)).toEqual({
+      stickers: [
+        {
+          name: 'Lefty (CT)',
+          image: 'https://cdn.steamstatic.com/apps/730/icons/econ/stickers/community/sticker_craft/paper_ct_left_hand.91b1beab7e5c986c9961bf6712400eccc89ec02b.png',
+        },
+      ],
+      keychain: {
+        name: 'Gritty',
+        image: 'https://cdn.steamstatic.com/apps/730/icons/econ/keychains/drboom/kc_db_terror.79493deaf354ac51f059600aeb3b6eca98c8b60d.png',
+      },
+    })
+  })
+
+  it('extracts multiple sticker name+image pairs in order', () => {
+    const twoStickers = [
+      {
+        type: 'html',
+        value: '<div id="sticker_info"><img src="https://cdn.example.com/a.png" title="Sticker: Hope"><br>Sticker: Hope</center></div>',
+      },
+      {
+        type: 'html',
+        value: '<div id="sticker_info"><img src="https://cdn.example.com/b.png" title="Sticker: Wildfire"><br>Sticker: Wildfire</center></div>',
+      },
+    ]
+    expect(attachedFromDescriptions(twoStickers).stickers).toEqual([
+      { name: 'Hope', image: 'https://cdn.example.com/a.png' },
+      { name: 'Wildfire', image: 'https://cdn.example.com/b.png' },
+    ])
+  })
+
+  it('handles empty input and block-less text', () => {
+    expect(attachedFromDescriptions(undefined)).toEqual({ stickers: [], keychain: null })
+    expect(attachedFromDescriptions([`<br>Sticker: Lights Out</center>`]).stickers).toEqual([])
+    expect(
+      attachedFromDescriptions([`<div id="sticker_info"><center><br>Sticker: Lights Out</center></div>`]).stickers.map(
+        (s) => s.name,
+      ),
+    ).toEqual(['Lights Out'])
+  })
+
+  it('captures names with special characters like & from the text node', () => {
+    expect(
+      attachedFromDescriptions([`<div id="sticker_info"><center><br>Sticker: Sparkle & Chill</center></div>`]).stickers,
+    ).toEqual([{ name: 'Sparkle & Chill', image: null }])
   })
 })

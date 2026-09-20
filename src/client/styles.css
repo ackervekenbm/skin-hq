@@ -358,6 +358,74 @@ button:disabled {
   gap: 8px;
 }
 
+.c-subrows {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--border);
+  padding-top: 10px;
+}
+
+.c-subrows-label {
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.c-subrow {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+}
+
+.c-subrow:hover {
+  border-color: #33456e;
+}
+
+.sub-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+}
+
+.sub-name {
+  font-size: 12px;
+  font-weight: 600;
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.sub-body {
+  display: grid;
+  grid-template-columns: minmax(150px, 210px) 1fr 1fr;
+  gap: 12px;
+  align-items: center;
+}
+
+/* Sticker sub-cards have no price sections, so don't stretch the empty
+   1fr tracks — shrink-wrap the image + slot/wear instead. */
+.sub-body--narrow {
+  grid-template-columns: auto;
+}
+
+/* The attached item is a mini card, so its icon box stays smaller than the
+   main card's 120x92 but uses the same frame/styling. */
+.c-subrow .c-img {
+  width: 84px;
+  height: 64px;
+  border-radius: 6px;
+}
+
 .c-img {
   flex-shrink: 0;
   display: flex;
@@ -634,7 +702,8 @@ button:disabled {
 }
 
 @media (max-width: 900px) {
-  .c-body {
+  .c-body,
+  .sub-body {
     grid-template-columns: 1fr;
     gap: 12px;
   }

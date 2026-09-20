@@ -4,7 +4,7 @@ import { EAuthSessionGuardType, EAuthTokenPlatformType, LoginSession } from 'ste
 import type { StartSessionResponse } from 'steam-session/dist/interfaces-external'
 import { clearSession, loadSession, saveSession, upsertItems } from './db'
 import { decodeSsrOrderbook } from './orderbook'
-import { inspectFromProperties, type AssetPropertyEntry, type OwnItemFloat } from './floats'
+import { attachedFromDescriptions, inspectFromProperties, type AssetPropertyEntry, type OwnItemFloat } from './floats'
 
 export const APPID = 730
 export const CONTEXTID = '2'
@@ -292,6 +292,7 @@ async function attachOwnFloats(byId: Map<string, InventoryItem>): Promise<void> 
     for (const info of props.values()) {
       const item = byId.get(info.assetid)
       if (!item) continue
+      attachNames(info, item.descriptions)
       item.own_float = info.float_value
       item.own_seed = info.paint_seed
       item.own_stickers =
@@ -301,6 +302,23 @@ async function attachOwnFloats(byId: Map<string, InventoryItem>): Promise<void> 
     }
   } catch (err) {
     console.warn('[inventory] own-item floats unavailable (best-effort):', (err as Error).message)
+  }
+}
+
+// Steam's description blocks name applied stickers ("Sticker: ...") and the
+// mounted charm ("Charm: ...") and carry their icon <img>; match them
+// positionally onto the decoded sticker/keychain entries so the grid can
+// render names/images offline.
+function attachNames(info: OwnItemFloat, descriptions: InventoryItem['descriptions']): void {
+  const { stickers, keychain } = attachedFromDescriptions(descriptions)
+  info.stickers.forEach((s, i) => {
+    const ref = stickers[i]
+    s.name = ref?.name ?? null
+    s.image = ref?.image ?? null
+  })
+  if (info.keychains.length > 0) {
+    info.keychains[0].name = keychain?.name ?? null
+    info.keychains[0].image = keychain?.image ?? null
   }
 }
 
@@ -325,18 +343,49 @@ async function fetchOwnAssetProperties(): Promise<Map<string, OwnItemFloat>> {
 async function collectContextProps(steamid64: string, contextid: string, into: Map<string, OwnItemFloat>): Promise<void> {
   // Steam's asset_properties endpoint is sessions-unfriendly: count=500 trips
   // its throttle (observed as HTTP 500) which then bleeds into the market
-  // endpoints for that session. Use count=100 and pause before the next
-  // context so normal market access keeps working.
+  // endpoints for that session. Use count=100 and pause between pages so
+  // normal market access keeps working. Inventories over 100 assets must be
+  // paged — a single request silently drops own-float/sticker/charm data for
+  // the tail (e.g. StatTrak items sorted after the first 100).
   const base = `https://steamcommunity.com/inventory/${steamid64}/730/${contextid}?l=english`
-  const resp = await httpJson('get', `${base}&count=100`)
-  const body = resp.body as Record<string, unknown>
-  if (body.success !== 1) return
-  const entries = (body.asset_properties as AssetPropertyEntry[] | undefined) ?? []
-  for (const entry of entries) {
-    const info = inspectFromProperties(entry)
-    if (info) into.set(info.assetid, info)
+  let startAssetid: string | undefined
+  for (let page = 0; page < 50; page++) {
+    const url = startAssetid ? `${base}&count=100&start_assetid=${startAssetid}` : `${base}&count=100`
+    const resp = await httpJson('get', url)
+    const { entries, next } = nextPropertiesPage(resp.body)
+    for (const entry of entries) {
+      const info = inspectFromProperties(entry)
+      if (info) into.set(info.assetid, info)
+    }
+    if (!next || next === startAssetid) break
+    startAssetid = next
+    await sleep(700)
   }
+  // Pause before the next context (context 2 then 16) as well.
   await sleep(700)
+}
+
+// Pure decoder for one page of the logged-in inventory JSON when it is being
+// paged for asset_properties — extracted so the paging decision is
+// unit-testable. Steam reports "there are more pages" as more_items=1|true
+// with the next chunk anchored at more_start_assetid (legacy fallback:
+// last_assetid). Returns the asset_properties entries plus the continuation
+// token (or null when the page is terminal or the fetch failed).
+export function nextPropertiesPage(body: Record<string, unknown>): {
+  entries: AssetPropertyEntry[]
+  next: string | null
+} {
+  if (body.success !== 1 && body.success !== true) return { entries: [], next: null }
+  const entries = (body.asset_properties as AssetPropertyEntry[] | undefined) ?? []
+  const more = body.more_items === true || body.more_items === 1
+  if (!more) return { entries, next: null }
+  const next =
+    typeof body.more_start_assetid === 'string' && body.more_start_assetid
+      ? body.more_start_assetid
+      : typeof body.last_assetid === 'string' && body.last_assetid
+        ? body.last_assetid
+        : null
+  return { entries, next }
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
