@@ -120,4 +120,10 @@ describe('attachedFromDescriptions', () => {
       ),
     ).toEqual(['Lights Out'])
   })
+
+  it('captures names with special characters like & from the text node', () => {
+    expect(
+      attachedFromDescriptions([`<div id="sticker_info"><center><br>Sticker: Sparkle & Chill</center></div>`]).stickers,
+    ).toEqual([{ name: 'Sparkle & Chill', image: null }])
+  })
 })

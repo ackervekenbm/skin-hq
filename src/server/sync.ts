@@ -92,7 +92,7 @@ export function attachedItemHashes(ownStickersRows: Array<string | null>): strin
   return [...hashes]
 }
 
-function enrichOwnStickers(
+export function enrichOwnStickers(
   raw: string | null,
   byItem: Map<string, Map<string, PriceSnapshotRow>>,
 ): string | null {
@@ -104,8 +104,10 @@ function enrichOwnStickers(
         name?: string | null
         steam_cents?: number | null
         csfloat_cents?: number | null
+        steam_median_cents?: number | null
         steam_buy_cents?: number | null
         steam_buy_count?: number | null
+        steam_volume?: number | null
       }>
     }
     const keychain = parsed?.keychains?.[0]
@@ -114,8 +116,10 @@ function enrichOwnStickers(
       if (snap) {
         keychain.steam_cents = snap.get('steam')?.lowest_cents ?? null
         keychain.csfloat_cents = snap.get('csfloat')?.lowest_cents ?? null
+        keychain.steam_median_cents = snap.get('steam')?.median_cents ?? null
         keychain.steam_buy_cents = snap.get('steam')?.highest_buy_cents ?? null
         keychain.steam_buy_count = snap.get('steam')?.buy_count ?? null
+        keychain.steam_volume = snap.get('steam')?.volume ?? null
       }
     }
     return JSON.stringify(parsed)
@@ -259,15 +263,17 @@ class SyncEngine {
 
     // Attached charms/stickers don't appear in the inventory listing (they
     // live on the weapon they are mounted to). Price them under their own
-    // market name so the grid can show a "worth" on the weapon card.
+    // market name so the grid can show a "worth" on the weapon card. They are
+    // also given pricing priority (after listed items) so a large inventory
+    // can't starve the charm worth out of the per-sync price cap.
     const attachedCharmHashes = attachedItemHashes(listItems().map((i) => i.own_stickers ?? null))
+    const attachedCharmSet = new Set(attachedCharmHashes)
     for (const hash of attachedCharmHashes) if (!candidates.includes(hash)) candidates.push(hash)
     const toPrice = candidates
       .filter(stale)
       .sort((a, b) => {
-        const la = listedSet.has(a) ? 0 : 1
-        const lb = listedSet.has(b) ? 0 : 1
-        return la - lb || freshAt(a) - freshAt(b)
+        const priority = (h: string): number => (listedSet.has(h) ? 0 : attachedCharmSet.has(h) ? 1 : 2)
+        return priority(a) - priority(b) || freshAt(a) - freshAt(b)
       })
       .slice(0, MAX_ITEMS_PER_SYNC)
 

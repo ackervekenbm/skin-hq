@@ -352,21 +352,40 @@ async function collectContextProps(steamid64: string, contextid: string, into: M
   for (let page = 0; page < 50; page++) {
     const url = startAssetid ? `${base}&count=100&start_assetid=${startAssetid}` : `${base}&count=100`
     const resp = await httpJson('get', url)
-    const body = resp.body as Record<string, unknown>
-    if (body.success !== 1) return
-    const entries = (body.asset_properties as AssetPropertyEntry[] | undefined) ?? []
+    const { entries, next } = nextPropertiesPage(resp.body)
     for (const entry of entries) {
       const info = inspectFromProperties(entry)
       if (info) into.set(info.assetid, info)
     }
-    const more = (body.more_items as boolean | undefined) ?? false
-    const next = (body.more_start_assetid as string | undefined) ?? (body.last_assetid as string | undefined)
-    if (!more || !next || next === startAssetid) break
+    if (!next || next === startAssetid) break
     startAssetid = next
     await sleep(700)
   }
   // Pause before the next context (context 2 then 16) as well.
   await sleep(700)
+}
+
+// Pure decoder for one page of the logged-in inventory JSON when it is being
+// paged for asset_properties — extracted so the paging decision is
+// unit-testable. Steam reports "there are more pages" as more_items=1|true
+// with the next chunk anchored at more_start_assetid (legacy fallback:
+// last_assetid). Returns the asset_properties entries plus the continuation
+// token (or null when the page is terminal or the fetch failed).
+export function nextPropertiesPage(body: Record<string, unknown>): {
+  entries: AssetPropertyEntry[]
+  next: string | null
+} {
+  if (body.success !== 1 && body.success !== true) return { entries: [], next: null }
+  const entries = (body.asset_properties as AssetPropertyEntry[] | undefined) ?? []
+  const more = body.more_items === true || body.more_items === 1
+  if (!more) return { entries, next: null }
+  const next =
+    typeof body.more_start_assetid === 'string' && body.more_start_assetid
+      ? body.more_start_assetid
+      : typeof body.last_assetid === 'string' && body.last_assetid
+        ? body.last_assetid
+        : null
+  return { entries, next }
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))

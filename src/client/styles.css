@@ -412,6 +412,12 @@ button:disabled {
   align-items: center;
 }
 
+/* Sticker sub-cards have no price sections, so don't stretch the empty
+   1fr tracks — shrink-wrap the image + slot/wear instead. */
+.sub-body--narrow {
+  grid-template-columns: auto;
+}
+
 /* The attached item is a mini card, so its icon box stays smaller than the
    main card's 120x92 but uses the same frame/styling. */
 .c-subrow .c-img {

@@ -115,7 +115,13 @@ function formatAmount(cents: number, currency: 'EUR' | 'USD'): string {
 }
 
 function formatGridPrice(p: GridPrice | null | undefined): string {
-  if (!p || p.lowest_cents == null) return '—'
+  if (!p || p.lowest_cents == null) {
+    // Steam returns a "0,00 €" placeholder for lowest_price when nothing is
+    // actively listed even though the item still trades (median/volume are
+    // real). A successful fetch with no lowest is "no listings", not "no
+    // data" — surface that state instead of a bare dash.
+    return p && p.had_error === 0 ? 'no listings' : '—'
+  }
   return formatAmount(p.lowest_cents, p.provider === 'csfloat' ? 'USD' : 'EUR')
 }
 
@@ -441,8 +447,10 @@ export default function App() {
             image?: string | null
             steam_cents?: number | null
             csfloat_cents?: number | null
+            steam_median_cents?: number | null
             steam_buy_cents?: number | null
             steam_buy_count?: number | null
+            steam_volume?: number | null
           }>)
         : []
     const showFloat = isCharm ? false : item.own ? item.own.float_value != null : csfloat?.float_value != null
@@ -495,13 +503,25 @@ export default function App() {
           <section className="c-sec">
             <h4>Steam</h4>
             <div className="c-row">
-              <span className="k">Floor</span>
+              <span className="k" title="Current lowest listed price">
+                Floor
+              </span>
               <span className="v price">{formatGridPrice(steam)}</span>
-              {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
             </div>
+            {(steam?.median_cents != null || steam?.volume != null) && (
+              <div className="c-row sub">
+                <span className="k" title="Median of sales in the last 24h">
+                  Median
+                </span>
+                <span className="v price">{steam?.median_cents != null ? formatAmount(steam.median_cents, 'EUR') : '—'}</span>
+                {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
+              </div>
+            )}
             {steam?.highest_buy_cents != null && (
               <div className="c-row sub">
-                <span className="k">Buy depth</span>
+                <span className="k" title="Best current buy offer">
+                  Buy depth
+                </span>
                 <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
                 {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
               </div>
@@ -569,12 +589,27 @@ export default function App() {
                   <section className="c-sec">
                     <h4>Steam</h4>
                     <div className="c-row">
-                      <span className="k">Floor</span>
+                      <span className="k" title="Current lowest listed price">
+                        Floor
+                      </span>
                       <span className="v price">{k.steam_cents != null ? formatAmount(k.steam_cents, 'EUR') : '—'}</span>
                     </div>
+                    {(k.steam_median_cents != null || k.steam_volume != null) && (
+                      <div className="c-row sub">
+                        <span className="k" title="Median of sales in the last 24h">
+                          Median
+                        </span>
+                        <span className="v price">
+                          {k.steam_median_cents != null ? formatAmount(k.steam_median_cents, 'EUR') : '—'}
+                        </span>
+                        {k.steam_volume != null && <span className="vol">×{k.steam_volume}</span>}
+                      </div>
+                    )}
                     {k.steam_buy_cents != null && (
                       <div className="c-row sub">
-                        <span className="k">Buy depth</span>
+                        <span className="k" title="Best current buy offer">
+                          Buy depth
+                        </span>
                         <span className="v">{formatAmount(k.steam_buy_cents, 'EUR')}</span>
                         {k.steam_buy_count != null && <span className="vol">×{k.steam_buy_count}</span>}
                       </div>
@@ -595,7 +630,7 @@ export default function App() {
                 <div className="sub-head">
                   <span className="sub-name">Sticker | {s.name ?? `#${s.stickerId}`}</span>
                 </div>
-                <div className="sub-body">
+                <div className="sub-body sub-body--narrow">
                   <div className="c-id">
                     <div className="c-img">{s.image && <img src={s.image} alt="" loading="lazy" />}</div>
                     <div className="c-float">
