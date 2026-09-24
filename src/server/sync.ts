@@ -19,6 +19,8 @@ export interface SyncStatus {
   last: { inventory: string | null; listings: string | null; prices: string | null }
   errors: string[]
   blockMessage: string | null
+  completedRuns: number
+  autoSyncMin: number | null
 }
 
 export interface GridItem {
@@ -33,6 +35,7 @@ export interface GridItem {
   own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, PriceSnapshotRow>
   listing: { listingid: string; price_cents: number | null } | null
+  pricesSyncedAt: string | null
 }
 
 export interface GridResponse {
@@ -145,6 +148,12 @@ const PRICE_DELAY_MS = Number(process.env.SYNC_PRICE_DELAY_MS ?? 1000)
 // 6h keeps normal usage comfortably under it; override with SYNC_PRICE_FRESH_MS.
 const PRICE_FRESH_MS = Number(process.env.SYNC_PRICE_FRESH_MS ?? 6 * 60 * 60_000)
 const PRICE_429_ABORT = Number(process.env.SYNC_PRICE_429_ABORT ?? 3)
+// How often the server auto-syncs on its own (inventory, listings, prices) so
+// an always-on deployment stays current without a manual "Sync now". 0 = no
+// scheduled syncs. Syncs never overlap: a tick that lands while one is running
+// is skipped, and the price phase is stale-gated (PRICE_FRESH_MS), so frequent
+// cadences are cheap.
+export const AUTO_SYNC_MIN = Number(process.env.SYNC_INTERVAL_MIN ?? 60)
 
 class SyncEngine {
   private running = false
@@ -155,6 +164,7 @@ class SyncEngine {
   private last: SyncStatus['last'] = { inventory: null, listings: null, prices: null }
   private errors: string[] = []
   private blockMessage: string | null = null
+  private completedRuns = 0
   private readonly MAX_ERRORS = 20
 
   private pushError(message: string): void {
@@ -172,6 +182,8 @@ class SyncEngine {
       last: { ...this.last },
       errors: [...this.errors],
       blockMessage: this.blockMessage,
+      completedRuns: this.completedRuns,
+      autoSyncMin: AUTO_SYNC_MIN > 0 ? AUTO_SYNC_MIN : null,
     }
   }
 
@@ -202,6 +214,7 @@ class SyncEngine {
       this.running = false
       this.phase = 'idle'
       this.startedAt = null
+      this.completedRuns++
     }
     return true
   }
@@ -370,6 +383,34 @@ class SyncEngine {
 
 export const sync = new SyncEngine()
 
+// Schedules the server-side auto-sync. First run shortly after boot (so a
+// restored session starts refreshing on its own), then every AUTO_SYNC_MIN.
+// Disabled when SYNC_INTERVAL_MIN=0. Timers are unref'd so they never keep the
+// process alive on their own.
+export function startAutoSync(): void {
+  if (!(AUTO_SYNC_MIN > 0)) {
+    console.info('[sync] auto-sync disabled (SYNC_INTERVAL_MIN=0)')
+    return
+  }
+  const tick = (): Promise<boolean> => autoSyncTick()
+  const timer = setTimeout(() => {
+    void tick()
+    const loop = setInterval(() => void tick(), AUTO_SYNC_MIN * 60_000)
+    loop.unref()
+  }, 60_000)
+  timer.unref()
+  console.info(`[sync] auto-sync every ${AUTO_SYNC_MIN} min (SYNC_INTERVAL_MIN)`)
+}
+
+async function autoSyncTick(): Promise<boolean> {
+  if (!steam.authStatus().loggedIn) return false
+  if (sync.status().running) return false
+  console.info('[sync] auto-sync starting')
+  const ok = await sync.syncAll()
+  console.info(`[sync] auto-sync ${ok ? 'finished' : 'skipped'}`)
+  return ok
+}
+
 export function buildGrid(): GridResponse {
   const { byItem, latestAt } = latestPriceSnapshots()
   // Active listings are matched by market hash name: listing assetids can go
@@ -398,6 +439,13 @@ export function buildGrid(): GridResponse {
         /* ignore legacy rows */
       }
       const listing = byHash.get(i.market_hash_name)
+      // All providers for a hash are snapshotted in the same pass, so the
+      // latest fetched_at across them is "the moment this item's prices were
+      // synced" (steam, CSFloat, ... together).
+      let pricesSyncedAt: string | null = null
+      for (const row of byItem.get(i.market_hash_name)?.values() ?? []) {
+        if (!pricesSyncedAt || row.fetched_at > pricesSyncedAt) pricesSyncedAt = row.fetched_at
+      }
       return {
         assetid: i.assetid,
         contextid: i.contextid ?? '2',
@@ -413,6 +461,7 @@ export function buildGrid(): GridResponse {
             : null,
         prices: Object.fromEntries(byItem.get(i.market_hash_name) ?? []),
         listing: listing ? { listingid: listing.listingid, price_cents: listing.price_cents } : null,
+        pricesSyncedAt,
       }
     })
     .sort(

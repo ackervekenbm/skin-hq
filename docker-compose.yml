@@ -10,6 +10,8 @@ services:
     environment:
       SKINHQ_SESSION_KEY: ${SKINHQ_SESSION_KEY:?set SKINHQ_SESSION_KEY in .env}
       CSFLOAT_API_KEY: ${CSFLOAT_API_KEY:-}
+      # Auto-sync cadence in minutes; 0 disables (manual "Sync now" only).
+      SYNC_INTERVAL_MIN: ${SYNC_INTERVAL_MIN:-60}
     volumes:
       - skin-hq-data:/app/data
     restart: unless-stopped

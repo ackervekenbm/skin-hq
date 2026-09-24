@@ -41,6 +41,7 @@ interface GridItem {
   own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, GridPrice>
   listing: { listingid: string; price_cents: number | null } | null
+  pricesSyncedAt: string | null
 }
 
 interface SyncStatus {
@@ -52,6 +53,8 @@ interface SyncStatus {
   last: { inventory: string | null; listings: string | null; prices: string | null }
   errors: string[]
   blockMessage?: string | null
+  completedRuns?: number
+  autoSyncMin?: number | null
 }
 
 interface GridResponse {
@@ -148,6 +151,10 @@ function relTime(iso: string | null | undefined): string {
   if (s < 60) return `${s}s ago`
   if (s < 3600) return `${Math.floor(s / 60)}m ago`
   return `${Math.floor(s / 3600)}h ago`
+}
+
+function formatAutoSyncMin(min: number): string {
+  return min % 60 === 0 ? `auto-sync every ${min / 60}h` : `auto-sync every ${min}m`
 }
 
 function wearOf(hash: string): string {
@@ -335,6 +342,9 @@ export default function App() {
       // from an earlier sync (e.g. a blocked/dead-session run before a
       // re-login) so the UI reflects the freshly loaded grid instead.
       setSyncStatus(null)
+      // Track the sync-run counter the grid was built from, so the auto-sync
+      // watcher below only reloads when an un-watched run actually completed.
+      lastRunCount.current = g.sync.completedRuns ?? null
     } catch (err) {
       pushLog('err', `grid: ${(err as Error).message}`)
     }
@@ -411,6 +421,43 @@ export default function App() {
   }, [syncWatching, grid?.sync.running, loadGrid, pushLog])
 
   const syncDisplay = syncStatus ?? grid?.sync ?? null
+
+  // Auto-sync visibility: the server runs scheduled syncs this tab didn't
+  // start. Poll /api/sync/status and surface progress + refresh the grid when
+  // an un-watched run finishes, so "prices synced" timestamps move on their
+  // own on an always-on box.
+  const lastRunCount = useRef<number | null>(null)
+  useEffect(() => {
+    if (!status?.loggedIn || syncWatching) return undefined
+    let cancelled = false
+    const tick = async () => {
+      try {
+        const s = await api<SyncStatus>('/api/sync/status')
+        if (cancelled) return
+        if (s.running) {
+          setSyncStatus(s)
+        } else if (s.completedRuns != null && lastRunCount.current != null) {
+          if (s.completedRuns > lastRunCount.current) {
+            // A run finished while we weren't watching it — refresh the grid.
+            lastRunCount.current = s.completedRuns
+            setSyncStatus(null)
+            await loadGrid()
+            pushLog('ok', 'Auto-sync finished')
+          } else if (s.completedRuns < lastRunCount.current) {
+            // Server restarted (in-memory counter reset) — adopt the new baseline.
+            lastRunCount.current = s.completedRuns
+          }
+        }
+      } catch {
+        /* transient — try again next tick */
+      }
+    }
+    const timer = setInterval(tick, 30_000)
+    return () => {
+      cancelled = true
+      clearInterval(timer)
+    }
+  }, [status?.loggedIn, syncWatching, loadGrid, pushLog])
 
   async function doSell(item: GridItem) {
     const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
@@ -568,6 +615,12 @@ export default function App() {
               <span className="v price">{formatGridPrice(csfloat)}</span>
             </div>
           </section>
+
+          {item.pricesSyncedAt != null && (
+            <p className="muted c-synced" title={`Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}`}>
+              prices synced {relTime(item.pricesSyncedAt)}
+            </p>
+          )}
 
           <section className="c-sec sell">
             <h4>Sell</h4>
@@ -768,7 +821,7 @@ export default function App() {
         )}
       </section>
 
-      {status?.loggedIn && (
+{status?.loggedIn && (
         <section className="card actions">
           <button onClick={() => void syncNow()} disabled={!status?.loggedIn || gridLoading}>
             {gridLoading ? 'Syncing…' : 'Sync now'}
@@ -782,6 +835,9 @@ export default function App() {
           {!syncDisplay?.running && syncDisplay?.last.prices && <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>}
           {status?.session?.state === 'throttled' && (
             <p className="hint">Steam is rate-limiting this session — sync may be delayed.</p>
+          )}
+          {!!syncDisplay?.autoSyncMin && syncDisplay.autoSyncMin > 0 && (
+            <span className="muted">{formatAutoSyncMin(syncDisplay.autoSyncMin)}</span>
           )}
         </section>
       )}

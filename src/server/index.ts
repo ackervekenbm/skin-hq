@@ -5,11 +5,13 @@ import './db'
 import * as steam from './steam'
 import { comparePrices } from './price'
 import { listItems } from './db'
-import { buildGrid, sync } from './sync'
+import { buildGrid, startAutoSync, sync } from './sync'
 import { buildCompare } from './compare'
 
 const app = express()
 app.use(express.json())
+
+startAutoSync()
 
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, version: '0.1.0' })
