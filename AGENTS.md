@@ -17,10 +17,10 @@ npm run build     # = typecheck && lint && vite build && tsup server  ← the ve
 npm test          # vitest unit tests (tests/, node env)
 ```
 
-`npm run build` is the required verification for every change; run `npm test`
-when you touch server logic (fee math, price parsing, the SSR orderbook
-decode). CI runs the `check` job (`npm ci && npm run build`) on every PR, and
-a green `check` is required to merge.
+**Verification for every change is `npm run build && npm test`** (`npm run
+build` = typecheck && lint && vite build && tsup server). CI runs the `check`
+job (`npm ci && npm run build && npm test`) on every PR, and a green `check`
+is required to merge.
 
 ## Issue-first workflow (MANDATORY)
 
@@ -32,6 +32,7 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
 
 - Name the branch `fix/...`, `feat/...` or `chore/...` (one per issue).
 - Put `Fixes #<n>` on its own line in the PR body so the issue auto-closes on merge.
+- Stack branches only when fixes are directly related; otherwise branch off `main`.
 
 ## Git / PR conventions
 
@@ -40,10 +41,18 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   auto-delete on merge is expected.
 - **The PR author never merges their own PR.** Open the PR, make sure the
   `check` status passes, then stop and let the maintainer review and merge.
-- Pattern: create branch → implement → `npm run build` → push → `gh pr create`
+- Pattern: create branch → implement → `npm run build && npm test` → push → `gh pr create`
   → wait for `check` to pass → leave for maintainer review.
 - Commit messages are imperative, single-paragraph (plus context lines), and
   reference the fix: `Fixes #<n>`.
+- **Branch hygiene** — keep the workspace tidy:
+  - Always branch off the latest `main` before starting new work.
+  - After a PR lands (squash merged), GitHub auto-deletes the remote branch.
+    Also delete the local branch afterwards:
+    `git checkout main && git fetch --prune && git branch -D <branch>`.
+  - Periodically prune stale local branches whose remotes are already gone:
+    `git branch -vv` (look for `[origin/...: gone]`) or
+    `git fetch --prune && git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads | grep gone`. Keep the workspace down to `main` plus active work branches.
 
 ## Architecture
 
