@@ -18,6 +18,7 @@ env:
 jobs:
   publish:
     name: Build & push GHCR image (amd64 + arm64)
+    needs: smoke
     runs-on: ubuntu-latest
     permissions:
       contents: read

@@ -21,11 +21,13 @@ named volume, so redeploys keep your session and sync data.
 mkdir -p ~/skin-hq && cd ~/skin-hq
 ```
 
-Generate a session-encryption key (any machine with node, or OMV if it has
-node):
+Generate a session-encryption key (any machine with node, `openssl`, or OMV
+itself):
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+# or, if node isn't installed (OMV is Debian, so usually available):
+openssl rand -hex 32
 # → write this into SKINHQ_SESSION_KEY below
 ```
 
