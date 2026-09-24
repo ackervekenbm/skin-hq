@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     tags: ['v*']
+  pull_request:
   workflow_dispatch:
 
 concurrency:
@@ -15,11 +16,17 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  publish:
+    name: Build & push GHCR image (amd64 + arm64)
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
+    # Only tags and the default branch publish — a workflow_dispatch on a
+    # feature branch must never push branch images into the (public) registry.
+    if: >-
+      github.event_name != 'pull_request' &&
+      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
     steps:
       - name: Check out code
         uses: actions/checkout@v7
@@ -43,6 +50,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
             type=ref,event=branch
             type=edge
             type=sha
@@ -61,3 +69,54 @@ jobs:
             COMMIT_SHA=${{ github.sha }}
             BUILD_TIME=${{ github.event.head_commit.timestamp }}
             GITHUB_REPOSITORY=${{ github.repository }}
+
+  smoke:
+    name: Smoke test (container boots, /api/health ok)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Validates the Dockerfile on every PR/main in CI because docker is not
+    # installed on the dev machine (see #16).
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v7
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build image (amd64, no push)
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: skin-hq:smoke
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ github.event.head_commit.timestamp || '' }}
+            GITHUB_REPOSITORY=${{ github.repository }}
+
+      - name: Boot container and wait for /api/health
+        run: |
+          set -euo pipefail
+          docker run -d --name skin-hq-smoke \
+            -e SKINHQ_SESSION_KEY=ci-smoke-key \
+            -p 3000:3000 \
+            skin-hq:smoke
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null | grep -q '"ok":true'; then
+              echo "health OK"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "container never became healthy"
+          exit 1
+
+      - name: Show container logs (on failure)
+        if: failure()
+        run: docker logs skin-hq-smoke || true
+
+      - name: Clean up
+        if: always()
+        run: docker rm -f skin-hq-smoke || true
