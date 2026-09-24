@@ -439,13 +439,16 @@ export default function App() {
         } else if (s.completedRuns != null && lastRunCount.current != null) {
           if (s.completedRuns > lastRunCount.current) {
             // A run finished while we weren't watching it — refresh the grid.
-            lastRunCount.current = s.completedRuns
+            // loadGrid() re-anchors lastRunCount from the fresh grid, so a
+            // failed reload leaves the ref untouched and the next tick retries.
             setSyncStatus(null)
             await loadGrid()
-            pushLog('ok', 'Auto-sync finished')
+            if (lastRunCount.current === s.completedRuns) pushLog('ok', 'Auto-sync finished')
           } else if (s.completedRuns < lastRunCount.current) {
-            // Server restarted (in-memory counter reset) — adopt the new baseline.
-            lastRunCount.current = s.completedRuns
+            // The server restarted (in-memory counter reset): clear any stale
+            // progress state and reload so timestamps match the live server.
+            setSyncStatus(null)
+            await loadGrid()
           }
         }
       } catch {
@@ -616,11 +619,12 @@ export default function App() {
             </div>
           </section>
 
-          {item.pricesSyncedAt != null && (
-            <p className="muted c-synced" title={`Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}`}>
-              prices synced {relTime(item.pricesSyncedAt)}
-            </p>
-          )}
+          <p
+            className="muted c-synced"
+            title={item.pricesSyncedAt ? `Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}` : 'No price snapshots yet'}
+          >
+            prices synced {item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}
+          </p>
 
           <section className="c-sec sell">
             <h4>Sell</h4>
