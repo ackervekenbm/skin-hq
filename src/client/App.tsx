@@ -331,6 +331,10 @@ export default function App() {
     try {
       const g = await api<GridResponse>('/api/grid')
       setGrid(g)
+      // The grid carries the latest sync snapshot; drop any status left over
+      // from an earlier sync (e.g. a blocked/dead-session run before a
+      // re-login) so the UI reflects the freshly loaded grid instead.
+      setSyncStatus(null)
     } catch (err) {
       pushLog('err', `grid: ${(err as Error).message}`)
     }
@@ -364,8 +368,12 @@ export default function App() {
     setGridLoading(true)
     try {
       const r = await api<{ started: boolean; sync: SyncStatus }>('/api/sync', { method: 'POST' })
-      if (!r.started) pushLog('warn', r.sync.blockMessage ?? 'Sync already running')
-      else pushLog('ok', 'Sync started — inventory, listings, prices')
+      if (!r.started) {
+        pushLog('warn', r.sync.blockMessage ?? 'Sync already running')
+        setGridLoading(false)
+        return
+      }
+      pushLog('ok', 'Sync started — inventory, listings, prices')
     } catch (err) {
       pushLog('err', `sync: ${(err as Error).message}`)
       setGridLoading(false)
