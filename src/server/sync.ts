@@ -18,6 +18,7 @@ export interface SyncStatus {
   total: number
   last: { inventory: string | null; listings: string | null; prices: string | null }
   errors: string[]
+  blockMessage: string | null
 }
 
 export interface GridItem {
@@ -153,6 +154,7 @@ class SyncEngine {
   private total = 0
   private last: SyncStatus['last'] = { inventory: null, listings: null, prices: null }
   private errors: string[] = []
+  private blockMessage: string | null = null
   private readonly MAX_ERRORS = 20
 
   private pushError(message: string): void {
@@ -169,13 +171,26 @@ class SyncEngine {
       total: this.total,
       last: { ...this.last },
       errors: [...this.errors],
+      blockMessage: this.blockMessage,
     }
   }
 
   async syncAll(): Promise<boolean> {
     if (this.running) return false
-    if (!steam.authStatus().loggedIn) return false
-
+    if (!steam.authStatus().loggedIn) {
+      this.blockMessage = 'Sign in to Steam first'
+      return false
+    }
+    // Probe first so a silently-rejected session never reaches the market:
+    // a force probe is one cheap GET and the only 'dead' outcome clears the
+    // stored session (see steam.ts).
+    const probe = await steam.probeSessionNow()
+    if (probe === 'dead') {
+      console.warn('[sync] aborted: Steam session was rejected — sign in again')
+      this.blockMessage = 'Steam session expired — sign in again'
+      return false
+    }
+    this.blockMessage = null
     this.running = true
     this.startedAt = new Date().toISOString()
     this.errors = []
@@ -203,6 +218,9 @@ class SyncEngine {
       this.last.inventory = null
       this.pushError(`inventory: ${(err as Error).message}`)
       console.warn('[sync] inventory failed', (err as Error).message)
+      // A session rejection usually surfaces here first — reclassify so the
+      // running sync aborts downstream instead of grinding on a dead session.
+      void steam.probeSessionNow()
     }
   }
 
@@ -235,6 +253,7 @@ class SyncEngine {
       this.last.listings = null
       this.pushError(`listings: ${(err as Error).message}`)
       console.warn('[sync] listings failed', (err as Error).message)
+      void steam.probeSessionNow()
     }
   }
 

@@ -65,6 +65,11 @@ declare module 'steamcommunity' {
     login(details: LoginDetails, callback: (err: LoginErr | null, sessionID?: string, cookies?: string[], steamguard?: string, mobileAccessToken?: string) => void): void
     setCookies(cookies: string[]): void
     getSessionID(host?: string): string
+    // Session-validity probe: GETs https://steamcommunity.com/my with
+    // followRedirect:false. callback(err, loggedIn, familyView): loggedIn is
+    // true for a valid 302→profile or 403 (Family View), false for a 302→login;
+    // err carries the HTTP status for throttling/unknown outcomes.
+    loggedIn(callback: (err: Error | null, loggedIn: boolean, familyView: boolean) => void): void
     getUserInventoryContents(
       userID: string | SteamID,
       appID: number,

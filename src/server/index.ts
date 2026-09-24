@@ -15,7 +15,10 @@ app.get('/api/health', (_req, res) => {
   res.json({ ok: true, version: '0.1.0' })
 })
 
-app.get('/api/auth/status', (_req, res) => {
+app.get('/api/auth/status', async (_req, res) => {
+  // Re-probe only when the cached result is stale, so polling status never
+  // hammers Steam while a dead session still auto-resolves.
+  await steam.ensureSessionProbe()
   res.json(steam.authStatus())
 })
 
