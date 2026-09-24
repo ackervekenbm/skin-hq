@@ -14,11 +14,115 @@ export const CURRENCY_EUR = 3
 
 const community = new SteamCommunity()
 
-community.on('sessionExpired', () => {
-  console.warn('[steam] Session expired on Steam side; clearing stored session')
+export type SessionProbeState = 'valid' | 'dead' | 'throttled' | 'unknown'
+
+// TTL for a cached session-validity probe. The probe is a single cheap GET to
+// https://steamcommunity.com/my (302 → profile when the session is valid, 302
+// → /login when Steam rejected it, 4xx/5xx/network when the account/IP is
+// throttled). It is also always re-run at the start of a sync, so this only
+// sets how quickly a *silently rejected* session resolves on its own while the
+// app idles.
+const PROBE_TTL_MS = Number(process.env.SKINHQ_PROBE_TTL_MS ?? 10 * 60_000)
+const PROBE_TIMEOUT_MS = 10_000
+
+let sessionProbe: SessionProbeState = 'unknown'
+let sessionProbeAt = 0
+let probeInFlight: Promise<SessionProbeState> | null = null
+
+// Classifies the community.loggedIn() callback (see the ambient declaration).
+// Only a definitive rejection resolves to 'dead'; throttling and unexpected
+// outcomes never clear a session.
+export function classifyProbe(err: Error | null, loggedIn: boolean | null): SessionProbeState {
+  if (!err) return loggedIn === true ? 'valid' : 'dead'
+  if (/\b429\b/.test(err.message) || /HTTP error (400|5\d\d)/.test(err.message)) return 'throttled'
+  return 'unknown'
+}
+
+function sessionProbeInfo(): { state: SessionProbeState; checkedAt: string | null } {
+  return { state: sessionProbe, checkedAt: sessionProbeAt > 0 ? new Date(sessionProbeAt).toISOString() : null }
+}
+
+export function resetSessionProbe(): void {
+  sessionProbe = 'unknown'
+  sessionProbeAt = 0
+}
+
+function invalidateSession(reason: string): void {
+  console.warn(`[steam] ${reason}; clearing stored session — sign in again`)
   clearSession()
   community.steamID = null
+  sessionProbe = 'dead'
+  sessionProbeAt = Date.now()
+}
+
+community.on('sessionExpired', () => {
+  invalidateSession('Session expired on Steam side')
 })
+
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error('probe timed out')), ms)
+    timer.unref()
+    p.then(
+      (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      (e) => {
+        clearTimeout(timer)
+        reject(e)
+      },
+    )
+  })
+}
+
+function probeSessionOnce(): Promise<SessionProbeState> {
+  return withTimeout(
+    new Promise<SessionProbeState>((resolve) => {
+      if (!community.steamID) {
+        resolve('unknown')
+        return
+      }
+      community.loggedIn((err, loggedIn) => resolve(classifyProbe(err, loggedIn)))
+    }),
+    PROBE_TIMEOUT_MS,
+  )
+}
+
+async function runProbe(): Promise<SessionProbeState> {
+  const state = await probeSessionOnce().catch(() => 'unknown' as SessionProbeState)
+  sessionProbe = state
+  sessionProbeAt = Date.now()
+  if (state === 'dead' && community.steamID) invalidateSession('Steam rejected the stored session')
+  return state
+}
+
+// Force a fresh session-validity probe: at the start of every sync, on boot
+// with a restored session, and on sync failures that smell like a dead
+// session. Deduplicated while one is in flight.
+export function probeSessionNow(): Promise<SessionProbeState> {
+  if (probeInFlight) return probeInFlight
+  probeInFlight = runProbe().finally(() => {
+    probeInFlight = null
+  })
+  return probeInFlight
+}
+
+// Rate-limit-friendly entry point for /api/auth/status: reuse the cached
+// result until it goes stale, so status polling never hammers Steam.
+export function ensureSessionProbe(): Promise<SessionProbeState> {
+  if (!community.steamID) return Promise.resolve('unknown')
+  if (probeInFlight) return probeInFlight
+  if (Date.now() - sessionProbeAt < PROBE_TTL_MS) return Promise.resolve(sessionProbe)
+  return probeSessionNow()
+}
+
+function scheduleProbe(delayMs: number): void {
+  const timer = setTimeout(() => {
+    void probeSessionNow()
+  }, delayMs)
+  timer.unref()
+}
 
 restoreSession()
 
@@ -28,6 +132,9 @@ function restoreSession(): void {
   try {
     community.setCookies(stored.cookies)
     console.info(`[steam] Restored stored session for ${stored.accountName}`)
+    // A stored session may already have been silently rejected by Steam;
+    // probe shortly after boot so the app lands in the right state on its own.
+    scheduleProbe(5000)
   } catch (err) {
     console.warn('[steam] Stored session failed to restore, clearing', (err as Error).message)
     clearSession()
@@ -39,6 +146,7 @@ export interface AuthStatus {
   steamid: string | null
   accountName?: string | null
   pendingLogin?: LoginGuard | null
+  session: { state: SessionProbeState; checkedAt: string | null }
 }
 
 export type LoginGuard = 'approval' | 'email' | 'mobile'
@@ -65,6 +173,7 @@ export function authStatus(): AuthStatus {
     steamid: community.steamID ? community.steamID.getSteamID64() : null,
     accountName: community.steamID ? (loadSession()?.accountName ?? null) : null,
     pendingLogin: pendingLogin?.guard ?? null,
+    session: sessionProbeInfo(),
   }
 }
 
@@ -80,6 +189,9 @@ function finishLogin(session: LoginSession, accountName: string): Promise<void> 
         try {
           const cookies = await session.getWebCookies()
           community.setCookies(cookies)
+          // A freshly issued session is valid by construction.
+          sessionProbe = 'valid'
+          sessionProbeAt = Date.now()
           const steamid = community.steamID ? community.steamID.getSteamID64() : ''
           saveSession({ accountName, steamid, cookies })
           resolve()
@@ -173,7 +285,8 @@ export function logout(): AuthStatus {
   // steamcommunity@3.50.3 has no logOff(); clearing the stored cookies alone
   // leaves community.steamID set, so nothing reports the session as gone.
   community.steamID = null
-  return { loggedIn: false, steamid: null }
+  resetSessionProbe()
+  return { loggedIn: false, steamid: null, session: sessionProbeInfo() }
 }
 
 function requireSession(): void {

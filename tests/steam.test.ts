@@ -9,7 +9,7 @@ const dbMock = vi.hoisted(() => ({
 
 vi.mock('../src/server/db', () => dbMock)
 
-import { nextPropertiesPage, parsePriceToCents } from '../src/server/steam'
+import { nextPropertiesPage, parsePriceToCents, classifyProbe } from '../src/server/steam'
 
 describe('parsePriceToCents', () => {
   it.each([
@@ -32,6 +32,25 @@ describe('parsePriceToCents', () => {
     expect(parsePriceToCents('n/a')).toBeNull()
     expect(parsePriceToCents('0')).toBeNull()
     expect(parsePriceToCents('€0,00')).toBeNull()
+  })
+})
+
+describe('classifyProbe', () => {
+  it('resolves a clean loggedIn() result to valid or dead', () => {
+    expect(classifyProbe(null, true)).toBe('valid')
+    expect(classifyProbe(null, false)).toBe('dead')
+  })
+
+  it('treats Steam pacing (429/400/5xx) as throttled, never dead', () => {
+    expect(classifyProbe(new Error('HTTP error 429'), null)).toBe('throttled')
+    expect(classifyProbe(new Error('HTTP error 400'), null)).toBe('throttled')
+    expect(classifyProbe(new Error('HTTP error 500'), null)).toBe('throttled')
+    expect(classifyProbe(new Error('HTTP error 502'), false)).toBe('throttled')
+  })
+
+  it('keeps the session on unexpected outcomes instead of clearing it', () => {
+    expect(classifyProbe(new Error('ETIMEDOUT'), null)).toBe('unknown')
+    expect(classifyProbe(new Error('Something else'), true)).toBe('unknown')
   })
 })
 

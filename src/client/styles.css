@@ -638,6 +638,10 @@ button:disabled {
   margin: 4px 0;
 }
 
+.hint-err {
+  color: var(--err);
+}
+
 .c-row.sub {
   color: var(--muted);
   font-size: 12px;

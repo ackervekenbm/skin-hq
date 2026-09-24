@@ -1,10 +1,11 @@
-import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface AuthStatus {
   loggedIn: boolean
   steamid: string | null
   accountName?: string | null
   pendingLogin?: 'approval' | 'email' | 'mobile' | null
+  session?: { state: 'valid' | 'dead' | 'throttled' | 'unknown'; checkedAt: string | null }
 }
 
 type LoginResponse =
@@ -50,6 +51,7 @@ interface SyncStatus {
   total: number
   last: { inventory: string | null; listings: string | null; prices: string | null }
   errors: string[]
+  blockMessage?: string | null
 }
 
 interface GridResponse {
@@ -216,6 +218,29 @@ export default function App() {
     return () => clearTimeout(timer)
   }, [fetchStatus])
 
+  // Slow cadence while the app is open: a silently-rejected Steam session
+  // flips us to logged-out on its own, no reload or manual action needed. The
+  // server only re-probes when its cached result is stale, so this never
+  // hammers Steam.
+  useEffect(() => {
+    const timer = setInterval(() => {
+      void fetchStatus().then(setStatus)
+    }, 30_000)
+    return () => clearInterval(timer)
+  }, [fetchStatus])
+
+  // Surface the moment Steam drops a session we previously had, instead of
+  // just quietly showing the sign-in form.
+  const prevLoggedIn = useRef<boolean | null>(null)
+  useEffect(() => {
+    if (status) {
+      if (prevLoggedIn.current === true && !status.loggedIn) {
+        pushLog('err', 'Steam session expired — sign in again')
+      }
+      prevLoggedIn.current = status.loggedIn
+    }
+  }, [status, pushLog])
+
   async function doLogin() {
     try {
       const res = await api<LoginResponse>('/api/auth/login', {
@@ -339,7 +364,7 @@ export default function App() {
     setGridLoading(true)
     try {
       const r = await api<{ started: boolean; sync: SyncStatus }>('/api/sync', { method: 'POST' })
-      if (!r.started) pushLog('warn', 'Sync already running')
+      if (!r.started) pushLog('warn', r.sync.blockMessage ?? 'Sync already running')
       else pushLog('ok', 'Sync started — inventory, listings, prices')
     } catch (err) {
       pushLog('err', `sync: ${(err as Error).message}`)
@@ -678,6 +703,10 @@ export default function App() {
   }, [grid, groupByRarity, listedOnly])
 
   useEffect(() => {
+    // Logged-out = no inventory view at all: every inventory-related section is
+    // gated on status.loggedIn, so stale counts/listings never render and the
+    // grid is only (re)loaded once signed back in.
+    if (!status?.loggedIn) return undefined
     const timer = setTimeout(() => {
       void loadGrid()
     }, 0)
@@ -701,6 +730,7 @@ export default function App() {
           </div>
         ) : (
           <>
+            {status?.session?.state === 'dead' && <p className="hint hint-err">Steam session expired — sign in again.</p>}
             <input placeholder="Steam account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
             <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
             {needsCode != null ? (
@@ -730,20 +760,25 @@ export default function App() {
         )}
       </section>
 
-      <section className="card actions">
-        <button onClick={() => void syncNow()} disabled={!status?.loggedIn || gridLoading}>
-          {gridLoading ? 'Syncing…' : 'Sync now'}
-        </button>
-        {syncDisplay?.running && (
-          <span className="mono sync-progress">
-            {syncDisplay.phase}
-            {syncDisplay.phase === 'prices' && syncDisplay.total > 0 ? ` ${syncDisplay.current}/${syncDisplay.total}` : '…'}
-          </span>
-        )}
-        {!syncDisplay?.running && syncDisplay?.last.prices && <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>}
-      </section>
+      {status?.loggedIn && (
+        <section className="card actions">
+          <button onClick={() => void syncNow()} disabled={!status?.loggedIn || gridLoading}>
+            {gridLoading ? 'Syncing…' : 'Sync now'}
+          </button>
+          {syncDisplay?.running && (
+            <span className="mono sync-progress">
+              {syncDisplay.phase}
+              {syncDisplay.phase === 'prices' && syncDisplay.total > 0 ? ` ${syncDisplay.current}/${syncDisplay.total}` : '…'}
+            </span>
+          )}
+          {!syncDisplay?.running && syncDisplay?.last.prices && <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>}
+          {status?.session?.state === 'throttled' && (
+            <p className="hint">Steam is rate-limiting this session — sync may be delayed.</p>
+          )}
+        </section>
+      )}
 
-      {compare && (
+      {status?.loggedIn && compare && (
         <section className="card compare">
           <div className="compare-head">
             <div>
@@ -850,7 +885,7 @@ export default function App() {
         </section>
       )}
 
-      {!!(syncDisplay?.errors.length ?? 0) && (
+      {status?.loggedIn && !!(syncDisplay?.errors.length ?? 0) && (
         <section className="card sync-errors">
           <h3>Sync issues</h3>
           <ul>
@@ -861,7 +896,8 @@ export default function App() {
         </section>
       )}
 
-      <section className="card grid-card">
+      {status?.loggedIn && (
+        <section className="card grid-card">
         <div className="grid-head">
           <div>
             <h2>Inventory</h2>
@@ -899,6 +935,7 @@ export default function App() {
           <div className="cards">{(view?.items ?? grid.items).map(renderCard)}</div>
         ) : null}
       </section>
+      )}
 
       <section className="card log">
         <h2>Log</h2>
