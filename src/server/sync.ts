@@ -142,11 +142,9 @@ function parseRarity(raw: InventoryRawFields): GridItem['rarity'] {
 
 const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms))
 
-// Per-pass hard cap for the price phase; 0 (default) = price every currently
-// stale hash, so a large first run fully prices the backlog instead of
-// leaving most items waiting for later passes. Pacing + the 429 abort below
-// keep a long drain Steam-friendly.
-const MAX_ITEMS_PER_SYNC = Number(process.env.SYNC_MAX_ITEMS ?? 0)
+// Every currently-stale hash is priced in one pass; no per-pass cap. Pacing
+// and the 429 abort keep long drains Steam-friendly, and the stale gate makes
+// later passes cheap once the backlog is covered.
 const PRICE_DELAY_MS = Number(process.env.SYNC_PRICE_DELAY_MS ?? 1000)
 // Steam's price endpoint throttles aggressively (undocumented, burst-based).
 // 6h keeps normal usage comfortably under it; override with SYNC_PRICE_FRESH_MS.
@@ -311,7 +309,7 @@ class SyncEngine {
         const priority = (h: string): number => (listedSet.has(h) ? 0 : attachedCharmSet.has(h) ? 1 : 2)
         return priority(a) - priority(b) || freshAt(a) - freshAt(b)
       })
-    const toPrice = MAX_ITEMS_PER_SYNC > 0 ? staleSorted.slice(0, MAX_ITEMS_PER_SYNC) : staleSorted
+    const toPrice = staleSorted
 
     if (toPrice.length === 0) {
       this.last.prices = new Date().toISOString()
