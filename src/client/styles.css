@@ -544,6 +544,7 @@ input::placeholder {
 
 .stat-badge {
   flex-shrink: 0;
+  margin-left: 6px;
 }
 
 .wear-badge,
