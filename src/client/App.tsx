@@ -474,6 +474,8 @@ export default function App() {
 
   const syncDisplay = syncStatus ?? grid?.sync ?? null
 
+  const visibleErrors = (syncDisplay?.errors ?? []).filter((e) => !dismissedErrors.includes(e))
+
   // Auto-sync visibility: the server runs scheduled syncs this tab didn't
   // start. Poll /api/sync/status and surface progress + refresh the grid when
   // an un-watched run finishes, so "prices synced" timestamps move on their
@@ -900,26 +902,21 @@ export default function App() {
           {status?.session?.state === 'throttled' && (
             <span className="chip chip-warn">Steam rate-limiting this session — sync may be delayed.</span>
           )}
+          {visibleErrors.length > 0 && (
+            <span className="chip chip-err">
+              <button className="chip-act" onClick={() => setDockOpen(true)}>
+                {visibleErrors.length} sync issue{visibleErrors.length > 1 ? 's' : ''}
+              </button>
+              <button
+                className="btn btn-icon chip-dismiss"
+                aria-label="Dismiss sync issues"
+                onClick={() => setDismissedErrors((prev) => [...prev, ...visibleErrors])}
+              >
+                ×
+              </button>
+            </span>
+          )}
         </section>
-      )}
-
-      {status?.loggedIn && (syncDisplay?.errors ?? []).some((e) => !dismissedErrors.includes(e)) && (
-        <div className={detail ? 'toasts toasts-left' : 'toasts'}>
-          {(syncDisplay?.errors ?? [])
-            .filter((e) => !dismissedErrors.includes(e))
-            .map((e, idx) => (
-              <div className="toast" key={idx}>
-                <span>{e}</span>
-                <button
-                  className="btn btn-icon"
-                  aria-label="Dismiss"
-                  onClick={() => setDismissedErrors((prev) => [...prev, e])}
-                >
-                  ×
-                </button>
-              </div>
-            ))}
-        </div>
       )}
 
       {status?.loggedIn && detail && (
