@@ -531,8 +531,8 @@ input::placeholder {
 
 .c-head .c-title {
   margin: 0;
-  flex: 1;
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .c-title {

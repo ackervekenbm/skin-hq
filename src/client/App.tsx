@@ -549,8 +549,10 @@ export default function App() {
     return (
       <article className="item-card" key={item.assetid}>
         <div className="c-head">
-          <h3 className="c-title">{baseName(item.name)}</h3>
-          {st && <span className="stat-badge">StatTrak</span>}
+          <h3 className="c-title">
+            {baseName(item.name)}
+            {st && <span className="stat-badge">StatTrak</span>}
+          </h3>
         </div>
 
         <div className="c-body">
