@@ -248,6 +248,14 @@ export default function App() {
     }
   }, [status, pushLog])
 
+  async function kickSyncAfterLogin() {
+    try {
+      await api('/api/sync', { method: 'POST' })
+    } catch (err) {
+      pushLog('err', `sync: ${(err as Error).message}`)
+    }
+  }
+
   async function doLogin() {
     try {
       const res = await api<LoginResponse>('/api/auth/login', {
@@ -276,6 +284,7 @@ export default function App() {
       setPassword('')
       setTwoFactorCode('')
       setStatus({ loggedIn: true, steamid: res.steamid })
+      void kickSyncAfterLogin()
       pushLog('ok', `Logged in as ${accountName}`)
     } catch (err) {
       setPendingApproval(false)
@@ -294,6 +303,7 @@ export default function App() {
           setPassword('')
           setTwoFactorCode('')
           setStatus({ loggedIn: true, steamid: s.steamid })
+          void kickSyncAfterLogin()
           pushLog('ok', 'Approved in Steam Mobile — signed in')
           return
         }
@@ -320,6 +330,7 @@ export default function App() {
       setTwoFactorCode('')
       setPassword('')
       setStatus(s)
+      void kickSyncAfterLogin()
       pushLog('ok', 'Signed in to Steam')
     } catch (err) {
       pushLog('err', `code: ${(err as Error).message}`)
