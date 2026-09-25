@@ -1,5 +1,12 @@
-:root {
+/* ── Theme tokens ──────────────────────────────────────────
+   The base :root block is the fallback; each [data-theme] block
+   swaps the whole skin. Pick one in the header (persisted in
+   localStorage). */
+
+:root,
+:root[data-theme="blue"] {
   --bg: #0a0e1c;
+  --bg-top: #131b36;
   --panel: #10172b;
   --panel-2: #16203c;
   --panel-3: #1c2a4e;
@@ -7,16 +14,106 @@
   --muted: #8791ab;
   --accent: #5b8cff;
   --accent-strong: #7aa5ff;
+  --on-accent: #ffffff;
   --ok: #43d39a;
   --warn: #e8c668;
   --err: #ff6d6d;
   --border: #26355c;
   --border-strong: #34467a;
   --ring: rgba(91, 140, 255, 0.45);
-  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --brand-grad: linear-gradient(135deg, #5b8cff, #8a6cff);
+  --accent-glow: rgba(91, 140, 255, 0.25);
+  --card-grad: linear-gradient(180deg, var(--panel-2), var(--panel));
+  --bar-bg: rgba(10, 14, 28, 0.86);
+  --scrim: rgba(4, 7, 15, 0.55);
+  --img-grad: radial-gradient(circle at 50% 35%, #223053, #101a36 72%);
+  --own-float: #7bb7ff;
   --radius: 12px;
-  --appbar-h: 56px;
   --shadow: 0 12px 32px rgba(3, 6, 16, 0.45);
+}
+
+:root[data-theme="onyx"] {
+  --bg: #0b0d10;
+  --bg-top: #191c22;
+  --panel: #131519;
+  --panel-2: #1a1d23;
+  --panel-3: #23262e;
+  --text: #f2f3f5;
+  --muted: #878d96;
+  --accent: #b9e233;
+  --accent-strong: #caf257;
+  --on-accent: #0c0e10;
+  --ok: #3ddc97;
+  --warn: #e6c86b;
+  --err: #f47070;
+  --border: #262a33;
+  --border-strong: #3a404c;
+  --ring: rgba(202, 242, 87, 0.4);
+  --brand-grad: linear-gradient(135deg, #b9e233, #e2b93c);
+  --accent-glow: rgba(185, 226, 51, 0.22);
+  --card-grad: linear-gradient(180deg, #1a1d23, #121418);
+  --bar-bg: rgba(11, 13, 16, 0.86);
+  --scrim: rgba(2, 4, 7, 0.6);
+  --img-grad: radial-gradient(circle at 50% 35%, #24272e, #0f1114 72%);
+  --own-float: #93c5fd;
+  --radius: 10px;
+  --shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+}
+
+:root[data-theme="dusk"] {
+  --bg: #0d0b1a;
+  --bg-top: #1b1733;
+  --panel: #131026;
+  --panel-2: #1b1833;
+  --panel-3: #241f45;
+  --text: #eeeafb;
+  --muted: #9188b8;
+  --accent: #8b7bff;
+  --accent-strong: #a79bff;
+  --on-accent: #ffffff;
+  --ok: #41d9a4;
+  --warn: #e9c878;
+  --err: #ff7878;
+  --border: #2b2650;
+  --border-strong: #3e3590;
+  --ring: rgba(151, 134, 255, 0.45);
+  --brand-grad: linear-gradient(135deg, #8b7bff, #c86bff);
+  --accent-glow: rgba(139, 123, 255, 0.28);
+  --card-grad: linear-gradient(180deg, #1b1833, #110e24);
+  --bar-bg: rgba(13, 11, 26, 0.87);
+  --scrim: rgba(8, 6, 18, 0.62);
+  --img-grad: radial-gradient(circle at 50% 35%, #262052, #120f28 72%);
+  --own-float: #a5b4fc;
+  --radius: 14px;
+  --shadow: 0 16px 36px rgba(5, 3, 14, 0.55);
+}
+
+:root[data-theme="ember"] {
+  --bg: #151009;
+  --bg-top: #25190d;
+  --panel: #1d1610;
+  --panel-2: #271d13;
+  --panel-3: #352b1c;
+  --text: #f6efe6;
+  --muted: #a2907b;
+  --accent: #ffb454;
+  --accent-strong: #ffc877;
+  --on-accent: #1b1309;
+  --ok: #4ad9a0;
+  --warn: #e6c170;
+  --err: #ff8373;
+  --border: #3b2e1f;
+  --border-strong: #58452d;
+  --ring: rgba(255, 180, 84, 0.4);
+  --brand-grad: linear-gradient(135deg, #ffb454, #ff7a59);
+  --accent-glow: rgba(255, 180, 84, 0.22);
+  --card-grad: linear-gradient(180deg, #271d13, #1a140e);
+  --bar-bg: rgba(21, 16, 9, 0.88);
+  --scrim: rgba(10, 6, 3, 0.6);
+  --img-grad: radial-gradient(circle at 50% 35%, #322619, #120d08 72%);
+  --own-float: #f0c082;
+  --radius: 12px;
+  --shadow: 0 14px 34px rgba(8, 4, 1, 0.55);
 }
 
 * {
@@ -25,23 +122,30 @@
 
 body {
   margin: 0;
-  background: radial-gradient(1200px 600px at 30% -10%, #131b36 0%, #0a0e1c 55%) var(--bg);
+  background: radial-gradient(1200px 600px at 30% -10%, var(--bg-top) 0%, var(--bg) 55%) var(--bg);
   color: var(--text);
   font: 14px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
 }
 
 button,
-input {
+input,
+select {
   font: inherit;
 }
 
-input {
+input,
+select {
   color-scheme: dark;
 }
 
+input::placeholder {
+  color: var(--muted);
+  opacity: 0.85;
+}
+
 ::selection {
-  background: rgba(91, 140, 255, 0.3);
+  background: var(--ring);
 }
 
 :focus-visible {
@@ -64,10 +168,10 @@ input {
   display: flex;
   align-items: center;
   gap: 12px;
-  height: var(--appbar-h);
+  height: var(--appbar-h, 56px);
   padding: 0 20px;
   margin: -20px -20px 18px;
-  background: rgba(10, 14, 28, 0.86);
+  background: var(--bar-bg);
   backdrop-filter: blur(8px);
   border-bottom: 1px solid var(--border);
 }
@@ -87,7 +191,7 @@ input {
   width: 8px;
   height: 8px;
   border-radius: 2px;
-  background: linear-gradient(135deg, var(--accent), #8a6cff);
+  background: var(--brand-grad);
 }
 
 .appbar-right {
@@ -121,6 +225,26 @@ input {
   border-radius: 50%;
   background: var(--ok);
   box-shadow: 0 0 8px var(--ok);
+}
+
+.theme-pick {
+  appearance: none;
+  -webkit-appearance: none;
+  background: var(--panel-2)
+    url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%23878d96'/%3E%3C/svg%3E")
+    no-repeat right 10px center;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 12px;
+  padding: 6px 26px 6px 11px;
+  cursor: pointer;
+}
+
+.theme-pick:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
 }
 
 .build {
@@ -157,8 +281,8 @@ input {
 
 .btn-primary {
   background: var(--accent);
-  color: #fff;
-  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 2px 8px rgba(91, 140, 255, 0.25);
+  color: var(--on-accent);
+  box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.22), 0 2px 8px var(--accent-glow);
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -250,7 +374,7 @@ input {
 
 .statusbar {
   position: sticky;
-  top: calc(var(--appbar-h) + 10px);
+  top: calc(var(--appbar-h, 56px) + 10px);
   z-index: 40;
   display: flex;
   align-items: center;
@@ -258,7 +382,7 @@ input {
   flex-wrap: wrap;
   padding: 12px 16px;
   margin-bottom: 18px;
-  background: rgba(16, 23, 43, 0.92);
+  background: var(--bar-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   backdrop-filter: blur(6px);
@@ -285,14 +409,14 @@ input {
 
 .chip-warn {
   color: var(--warn);
-  border-color: rgba(232, 198, 104, 0.5);
+  border-color: color-mix(in srgb, var(--warn) 50%, transparent);
 }
 
 /* ── Error toasts ────────────────────────────────────────── */
 
 .toasts {
   position: fixed;
-  top: calc(var(--appbar-h) + 14px);
+  top: calc(var(--appbar-h, 56px) + 14px);
   right: 16px;
   z-index: 95;
   display: flex;
@@ -307,7 +431,7 @@ input {
   gap: 10px;
   padding: 10px 12px;
   background: var(--panel);
-  border: 1px solid rgba(255, 109, 109, 0.55);
+  border: 1px solid color-mix(in srgb, var(--err) 55%, transparent);
   border-left: 3px solid var(--err);
   border-radius: 10px;
   font-size: 12.5px;
@@ -388,9 +512,12 @@ input {
   font-family: var(--mono);
 }
 
+/* Single column on purpose: attached skins/stickers keep cards a
+   consistent height, and new price providers (Skinport, …) simply add
+   another section to the row instead of fighting for width. */
 .cards {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
   padding: 12px 2px 2px;
 }
@@ -402,7 +529,7 @@ input {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
-  background: linear-gradient(180deg, var(--panel-2), var(--panel));
+  background: var(--card-grad);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 14px 16px;
@@ -411,7 +538,7 @@ input {
 
 .item-card:hover {
   border-color: var(--border-strong);
-  box-shadow: 0 6px 20px rgba(3, 6, 16, 0.35);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
 }
 
 .c-head {
@@ -454,7 +581,7 @@ input {
 .wear-badge {
   color: var(--accent-strong);
   border: 1px solid var(--border);
-  background: rgba(91, 140, 255, 0.08);
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
 }
 
 .stat-badge {
@@ -480,14 +607,14 @@ input {
 
 .badge.ok {
   color: var(--ok);
-  border-color: rgba(67, 211, 154, 0.4);
-  background: rgba(67, 211, 154, 0.08);
+  border-color: color-mix(in srgb, var(--ok) 40%, transparent);
+  background: color-mix(in srgb, var(--ok) 8%, transparent);
 }
 
 .c-body {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(0, 2fr);
-  gap: 16px;
+  grid-template-columns: minmax(230px, 320px) minmax(0, 1fr);
+  gap: 20px;
   align-items: start;
 }
 
@@ -505,7 +632,7 @@ input {
   justify-content: center;
   width: 108px;
   height: 84px;
-  background: radial-gradient(circle at 50% 35%, #223053, #101a36 72%);
+  background: var(--img-grad);
   border: 1px solid var(--border);
   border-radius: 8px;
 }
@@ -536,7 +663,7 @@ input {
 }
 
 .c-float .fv.own-float {
-  color: #7bb7ff;
+  color: var(--own-float);
 }
 
 .c-float .vol {
@@ -550,10 +677,11 @@ input {
   gap: 8px;
 }
 
+/* Price providers share a row; a new platform just adds a <section>. */
 .c-prices {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
   min-width: 0;
 }
 
@@ -561,7 +689,15 @@ input {
   display: flex;
   flex-direction: column;
   gap: 7px;
-  min-width: 0;
+  min-width: 150px;
+  flex: 1 1 0;
+  padding-left: 16px;
+  border-left: 1px solid var(--border);
+}
+
+.c-sec:first-child {
+  border-left: 0;
+  padding-left: 0;
 }
 
 .c-sec h4 {
@@ -709,7 +845,7 @@ input {
   position: fixed;
   inset: 0;
   z-index: 80;
-  background: rgba(4, 7, 15, 0.55);
+  background: var(--scrim);
   backdrop-filter: blur(2px);
 }
 
@@ -726,7 +862,7 @@ input {
   padding: 20px;
   background: var(--panel);
   border-left: 1px solid var(--border-strong);
-  box-shadow: -16px 0 40px rgba(3, 6, 16, 0.5);
+  box-shadow: -16px 0 40px rgba(0, 0, 0, 0.5);
   overflow-y: auto;
   animation: drawer-in 0.18s ease-out;
 }
@@ -883,7 +1019,7 @@ input {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: rgba(16, 23, 43, 0.96);
+  background: var(--bar-bg);
   border: 1px solid var(--border);
   border-radius: var(--radius);
   box-shadow: var(--shadow);
@@ -975,20 +1111,20 @@ footer {
 
 /* ── Breakpoints ─────────────────────────────────────────── */
 
-@media (max-width: 1200px) {
+@media (max-width: 720px) {
   .c-body {
     grid-template-columns: 1fr;
     gap: 12px;
   }
-}
 
-@media (max-width: 860px) {
-  .cards {
-    grid-template-columns: 1fr;
+  .c-sec {
+    border-left: 0;
+    padding-left: 0;
+    border-top: 1px solid var(--border);
+    padding-top: 10px;
+    flex: 1 1 100%;
   }
-}
 
-@media (max-width: 720px) {
   .compare-cols {
     grid-template-columns: 1fr;
   }

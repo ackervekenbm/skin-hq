@@ -157,6 +157,15 @@ function formatAutoSyncMin(min: number): string {
   return min % 60 === 0 ? `auto-sync every ${min / 60}h` : `auto-sync every ${min}m`
 }
 
+const THEMES = [
+  { id: 'onyx', label: 'Onyx' },
+  { id: 'dusk', label: 'Dusk' },
+  { id: 'ember', label: 'Ember' },
+  { id: 'blue', label: 'Blue' },
+] as const
+
+type ThemeId = (typeof THEMES)[number]['id']
+
 function wearOf(hash: string): string {
   const m = hash.match(/\(([^)]+)\)$/)
   return m ? m[1] : ''
@@ -204,6 +213,10 @@ export default function App() {
   const [detail, setDetail] = useState<GridItem | null>(null)
   const [dockOpen, setDockOpen] = useState(false)
   const [dismissedErrors, setDismissedErrors] = useState<string[]>([])
+  const [theme, setTheme] = useState<ThemeId>(() => {
+    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('skin-hq-theme') : null
+    return (saved as ThemeId | null) ?? 'onyx'
+  })
   const [log, setLog] = useState<LogLine[]>([])
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [syncWatching, setSyncWatching] = useState(false)
@@ -392,6 +405,11 @@ export default function App() {
     setDetail(null)
     setCompare(null)
   }, [])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('skin-hq-theme', theme)
+  }, [theme])
 
   useEffect(() => {
     if (!detail) return undefined
@@ -807,6 +825,18 @@ export default function App() {
               </button>
             </>
           )}
+          <select
+            className="theme-pick"
+            value={theme}
+            onChange={(e) => setTheme(e.target.value as ThemeId)}
+            aria-label="Color theme"
+          >
+            {THEMES.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.label}
+              </option>
+            ))}
+          </select>
           <span className="build">
             build {__BUILD_SHA__}
             {__BUILD_TIME__ ? ` · ${__BUILD_TIME__}` : ''}
