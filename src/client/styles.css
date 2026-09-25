@@ -553,7 +553,7 @@ input::placeholder {
 .wear-badge,
 .stat-badge {
   display: inline-block;
-  padding: 1px 7px;
+  padding: 2px 7px;
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.05em;
