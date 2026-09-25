@@ -531,6 +531,13 @@ button:disabled {
   font-weight: 600;
 }
 
+/* Per-item "prices synced <time>" caption: every provider for the item was
+   snapshotted at that moment. */
+.c-synced {
+  margin: 0;
+  font-size: 11px;
+}
+
 .c-actions {
   display: flex;
   flex-wrap: wrap;
