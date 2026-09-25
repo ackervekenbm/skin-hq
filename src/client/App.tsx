@@ -345,21 +345,24 @@ export default function App() {
     pushLog('ok', 'Logged out')
   }
 
-  const loadGrid = useCallback(async () => {
+  const refreshGrid = useCallback(async () => {
+    let g: GridResponse | null = null
     try {
-      const g = await api<GridResponse>('/api/grid')
+      g = await api<GridResponse>('/api/grid')
       setGrid(g)
-      // The grid carries the latest sync snapshot; drop any status left over
-      // from an earlier sync (e.g. a blocked/dead-session run before a
-      // re-login) so the UI reflects the freshly loaded grid instead.
-      setSyncStatus(null)
-      // Track the sync-run counter the grid was built from, so the auto-sync
-      // watcher below only reloads when an un-watched run actually completed.
-      lastRunCount.current = g.sync.completedRuns ?? null
     } catch (err) {
       pushLog('err', `grid: ${(err as Error).message}`)
     }
+    return g
   }, [pushLog])
+
+  const loadGrid = useCallback(async () => {
+    const g = await refreshGrid()
+    if (g) {
+      setSyncStatus(null)
+      lastRunCount.current = g.sync.completedRuns ?? null
+    }
+  }, [refreshGrid])
 
   const loadCompare = useCallback(
     async (hash: string) => {
@@ -418,6 +421,8 @@ export default function App() {
           await loadGrid()
           setGridLoading(false)
           pushLog('ok', 'Sync finished')
+        } else {
+          await refreshGrid()
         }
       } catch (err) {
         pushLog('err', `sync status: ${(err as Error).message}`)
@@ -429,7 +434,7 @@ export default function App() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [syncWatching, grid?.sync.running, loadGrid, pushLog])
+  }, [syncWatching, grid?.sync.running, loadGrid, refreshGrid, pushLog])
 
   const syncDisplay = syncStatus ?? grid?.sync ?? null
 
@@ -447,6 +452,7 @@ export default function App() {
         if (cancelled) return
         if (s.running) {
           setSyncStatus(s)
+          await refreshGrid()
         } else if (s.completedRuns != null && lastRunCount.current != null) {
           if (s.completedRuns > lastRunCount.current) {
             // A run finished while we weren't watching it — refresh the grid.
@@ -471,7 +477,7 @@ export default function App() {
       cancelled = true
       clearInterval(timer)
     }
-  }, [status?.loggedIn, syncWatching, loadGrid, pushLog])
+  }, [status?.loggedIn, syncWatching, loadGrid, refreshGrid, pushLog])
 
   async function doSell(item: GridItem) {
     const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
