@@ -904,7 +904,7 @@ export default function App() {
       )}
 
       {status?.loggedIn && (syncDisplay?.errors ?? []).some((e) => !dismissedErrors.includes(e)) && (
-        <div className="toasts">
+        <div className={detail ? 'toasts toasts-left' : 'toasts'}>
           {(syncDisplay?.errors ?? [])
             .filter((e) => !dismissedErrors.includes(e))
             .map((e, idx) => (

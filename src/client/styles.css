@@ -425,6 +425,13 @@ input::placeholder {
   width: min(380px, calc(100vw - 32px));
 }
 
+/* With the detail drawer open the right edge belongs to the drawer —
+   move the toast stack left so the two never overlap. */
+.toasts-left {
+  right: auto;
+  left: 16px;
+}
+
 .toast {
   display: flex;
   align-items: center;
