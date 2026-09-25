@@ -158,10 +158,10 @@ function formatAutoSyncMin(min: number): string {
 }
 
 const THEMES = [
-  { id: 'onyx', label: 'Onyx' },
-  { id: 'dusk', label: 'Dusk' },
-  { id: 'ember', label: 'Ember' },
-  { id: 'blue', label: 'Blue' },
+  { id: 'onyx', label: 'Onyx', bg: '#0b0d10', accent: '#b9e233' },
+  { id: 'dusk', label: 'Dusk', bg: '#0d0b1a', accent: '#8b7bff' },
+  { id: 'ember', label: 'Ember', bg: '#151009', accent: '#ffb454' },
+  { id: 'blue', label: 'Blue', bg: '#0a0e1c', accent: '#5b8cff' },
 ] as const
 
 type ThemeId = (typeof THEMES)[number]['id']
@@ -213,6 +213,7 @@ export default function App() {
   const [detail, setDetail] = useState<GridItem | null>(null)
   const [dockOpen, setDockOpen] = useState(false)
   const [dismissedErrors, setDismissedErrors] = useState<string[]>([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<ThemeId>(() => {
     const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('skin-hq-theme') : null
     return (saved as ThemeId | null) ?? 'onyx'
@@ -412,13 +413,16 @@ export default function App() {
   }, [theme])
 
   useEffect(() => {
-    if (!detail) return undefined
+    if (!detail && !settingsOpen) return undefined
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') closeDetail()
+      if (e.key === 'Escape') {
+        closeDetail()
+        setSettingsOpen(false)
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [detail, closeDetail])
+  }, [detail, settingsOpen, closeDetail])
 
   async function syncNow() {
     if (!status?.loggedIn) {
@@ -987,31 +991,31 @@ export default function App() {
         <h1>SkinHQ</h1>
         <div className="appbar-right">
           {status?.loggedIn && (
-            <>
-              <span className="acct" title={status.steamid ?? undefined}>
-                {status.accountName ?? status.steamid}
-              </span>
-              <button className="btn btn-ghost" onClick={() => void doLogout()}>
-                Log out
-              </button>
-            </>
+            <span className="acct" title={status.steamid ?? undefined}>
+              {status.accountName ?? status.steamid}
+            </span>
           )}
-          <select
-            className="theme-pick"
-            value={theme}
-            onChange={(e) => setTheme(e.target.value as ThemeId)}
-            aria-label="Color theme"
+          <button
+            className="btn btn-icon"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
+            title="Settings"
           >
-            {THEMES.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.label}
-              </option>
-            ))}
-          </select>
-          <span className="build">
-            build {__BUILD_SHA__}
-            {__BUILD_TIME__ ? ` · ${__BUILD_TIME__}` : ''}
-          </span>
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
         </div>
       </header>
 
@@ -1145,7 +1149,6 @@ export default function App() {
         <button className="btn btn-ghost btn-sm" onClick={() => setDockOpen((v) => !v)}>
           {dockOpen ? 'Hide activity' : 'Show activity'}
         </button>
-        <span className="build">repo {__REPO__}</span>
       </footer>
 
       {status?.loggedIn && log.length > 0 && (
@@ -1169,6 +1172,84 @@ export default function App() {
             ))}
           </ul>
         </aside>
+      )}
+
+      {settingsOpen && (
+        <div className="settings-overlay" role="dialog" aria-modal="true" aria-label="Settings" onClick={() => setSettingsOpen(false)}>
+          <div className="settings-card" onClick={(e) => e.stopPropagation()}>
+            <button className="btn btn-icon card-close" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
+              ×
+            </button>
+
+            <div className="settings-brand">
+              <span className="settings-logo" aria-hidden="true" />
+              <h2>SkinHQ</h2>
+              <p className="settings-sub">Steam + CSFloat listing workspace · local &amp; single-user</p>
+            </div>
+
+            {status?.loggedIn && (
+              <section className="settings-sec">
+                <span className="settings-heading">Account</span>
+                <div className="settings-row">
+                  <span className="mono muted">
+                    {status.accountName ?? 'Signed in'}
+                    {status.steamid ? ` · ${status.steamid}` : ''}
+                  </span>
+                  <button className="btn btn-ghost" onClick={() => void doLogout().finally(() => setSettingsOpen(false))}>
+                    Log out
+                  </button>
+                </div>
+              </section>
+            )}
+
+            <section className="settings-sec">
+              <span className="settings-heading">UI style</span>
+              <div className="theme-picker" role="radiogroup" aria-label="UI style">
+                {THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={theme === t.id}
+                    className={`theme-chip${theme === t.id ? ' active' : ''}`}
+                    onClick={() => setTheme(t.id)}
+                  >
+                    <span className="theme-swatch" style={{ background: t.bg }}>
+                      <span className="theme-swatch-dot" style={{ background: t.accent }} />
+                    </span>
+                    <span className="theme-label">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <p className="settings-build">
+              {__BUILD_SHA__ === 'dev' ? (
+                'development build'
+              ) : (
+                <>
+                  <a href={`https://github.com/${__REPO__}/commit/${__BUILD_SHA__}`} target="_blank" rel="noopener noreferrer">
+                    {__BUILD_SHA__.slice(0, 7)}
+                  </a>
+                  {__BUILD_TIME__ ? (
+                    <>
+                      {' · '}
+                      {new Date(__BUILD_TIME__).toLocaleDateString([], {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </>
+                  ) : null}
+                  {' · '}
+                  <a href={`https://github.com/${__REPO__}/issues`} target="_blank" rel="noopener noreferrer">
+                    Report an issue
+                  </a>
+                </>
+              )}
+            </p>
+          </div>
+        </div>
       )}
     </div>
   )
