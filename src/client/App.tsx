@@ -1,4 +1,20 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  baseName,
+  eurosToCents,
+  formatAmount,
+  formatAutoSyncMin,
+  formatEuro,
+  formatFloat,
+  formatGridPrice,
+  isStatTrak,
+  parseStickers,
+  relTime,
+  wearOf,
+  type GridPrice,
+  type StickerRef,
+} from './format'
+import { groupByRarity, type RarityGroup } from './grouping'
 
 interface AuthStatus {
   loggedIn: boolean
@@ -12,22 +28,6 @@ type LoginResponse =
   | { loggedIn: true; steamid: string }
   | { needsApproval: true }
   | { needsCode: true; guard: 'email' | 'mobile'; emaildomain?: string }
-
-interface GridPrice {
-  provider: string
-  lowest_cents: number | null
-  median_cents: number | null
-  volume: number | null
-  sell_count: number | null
-  buy_count: number | null
-  highest_buy_cents: number | null
-  float_value: number | null
-  paint_seed: number | null
-  stickers: string | null
-  had_error: number
-  note?: string | null
-  fetched_at: string
-}
 
 interface GridItem {
   assetid: string
@@ -64,11 +64,6 @@ interface GridResponse {
   items: GridItem[]
 }
 
-interface StickerRef {
-  name: string
-  slot: number
-}
-
 interface CompareSide {
   provider: 'steam' | 'csfloat'
   currency: 'EUR' | 'USD'
@@ -103,79 +98,14 @@ interface LogLine {
   text: string
 }
 
-interface RarityGroup {
-  key: string
-  label: string
-  rank: number
-  items: GridItem[]
-}
+const THEMES = [
+  { id: 'onyx', label: 'Onyx', bg: '#0b0d10', accent: '#b9e233' },
+  { id: 'dusk', label: 'Dusk', bg: '#0d0b1a', accent: '#8b7bff' },
+  { id: 'ember', label: 'Ember', bg: '#151009', accent: '#ffb454' },
+  { id: 'blue', label: 'Blue', bg: '#0a0e1c', accent: '#5b8cff' },
+] as const
 
-function formatEuro(cents: number | null | undefined): string {
-  if (cents == null) return '—'
-  return `€${(cents / 100).toFixed(2)}`
-}
-
-function formatAmount(cents: number, currency: 'EUR' | 'USD'): string {
-  return `${currency === 'USD' ? '$' : '€'}${(cents / 100).toFixed(2)}`
-}
-
-function formatGridPrice(p: GridPrice | null | undefined): string {
-  if (!p || p.lowest_cents == null) {
-    // Steam returns a "0,00 €" placeholder for lowest_price when nothing is
-    // actively listed even though the item still trades (median/volume are
-    // real). A successful fetch with no lowest is "no listings", not "no
-    // data" — surface that state instead of a bare dash.
-    return p && p.had_error === 0 ? 'no listings' : '—'
-  }
-  return formatAmount(p.lowest_cents, p.provider === 'csfloat' ? 'USD' : 'EUR')
-}
-
-function formatFloat(f: number | null | undefined): string {
-  if (f == null) return '—'
-  return f.toFixed(4)
-}
-
-function parseStickers(raw: string | null | undefined): StickerRef[] {
-  if (!raw) return []
-  try {
-    const arr = JSON.parse(raw) as StickerRef[]
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-}
-
-function relTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  return `${Math.floor(s / 3600)}h ago`
-}
-
-function formatAutoSyncMin(min: number): string {
-  return min % 60 === 0 ? `auto-sync every ${min / 60}h` : `auto-sync every ${min}m`
-}
-
-function wearOf(hash: string): string {
-  const m = hash.match(/\(([^)]+)\)$/)
-  return m ? m[1] : ''
-}
-
-function isStatTrak(name: string, hash: string): boolean {
-  return /^StatTrak/i.test(name) || /^StatTrak/i.test(hash)
-}
-
-function baseName(name: string): string {
-  return name.replace(/^StatTrak\u2122?\s*/i, '').replace(/\s*\([^)]+\)$/, '').trim()
-}
-
-function eurosToCents(input: string): number | null {
-  const text = input.trim().replace(/[€\s]/g, '').replace(',', '.')
-  const amount = Number(text)
-  if (!Number.isFinite(amount) || amount <= 0) return null
-  return Math.round(amount * 100)
-}
+type ThemeId = (typeof THEMES)[number]['id']
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -194,13 +124,28 @@ export default function App() {
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [needsCode, setNeedsCode] = useState<'email' | 'mobile' | null>(null)
   const [pendingApproval, setPendingApproval] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
   const [grid, setGrid] = useState<GridResponse | null>(null)
   const [gridLoading, setGridLoading] = useState(false)
-  const [groupByRarity, setGroupByRarity] = useState(true)
+  const [grouping, setGrouping] = useState(true)
   const [listedOnly, setListedOnly] = useState(false)
   const [sellPrices, setSellPrices] = useState<Record<string, string>>({})
   const [compare, setCompare] = useState<CompareRow | null>(null)
   const [compareLoading, setCompareLoading] = useState(false)
+  const [detail, setDetail] = useState<GridItem | null>(null)
+  const [dockOpen, setDockOpen] = useState(false)
+  const [dismissedErrors, setDismissedErrors] = useState<string[]>([])
+  const [sellingIds, setSellingIds] = useState<string[]>([])
+  const [settingsOpen, setSettingsOpen] = useState(false)
+  const [theme, setTheme] = useState<ThemeId>(() => {
+    let saved: string | null = null
+    try {
+      saved = typeof localStorage !== 'undefined' ? localStorage.getItem('skin-hq-theme') : null
+    } catch {
+      /* storage unavailable — fall back to default */
+    }
+    return THEMES.some((t) => t.id === saved) ? (saved as ThemeId) : 'onyx'
+  })
   const [log, setLog] = useState<LogLine[]>([])
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [syncWatching, setSyncWatching] = useState(false)
@@ -257,6 +202,7 @@ export default function App() {
   }
 
   async function doLogin() {
+    setLoginError(null)
     try {
       const res = await api<LoginResponse>('/api/auth/login', {
         method: 'POST',
@@ -288,6 +234,7 @@ export default function App() {
       pushLog('ok', `Logged in as ${accountName}`)
     } catch (err) {
       setPendingApproval(false)
+      setLoginError((err as Error).message)
       pushLog('err', `login: ${(err as Error).message}`)
     }
   }
@@ -321,6 +268,7 @@ export default function App() {
   }
 
   async function submitCode() {
+    setLoginError(null)
     try {
       const s = await api<AuthStatus>('/api/auth/guard', {
         method: 'POST',
@@ -333,16 +281,31 @@ export default function App() {
       void kickSyncAfterLogin()
       pushLog('ok', 'Signed in to Steam')
     } catch (err) {
+      setLoginError((err as Error).message)
       pushLog('err', `code: ${(err as Error).message}`)
     }
   }
 
-  async function doLogout() {
-    await api('/api/auth/logout', { method: 'POST' })
+  async function doLogout(): Promise<boolean> {
+    try {
+      await api('/api/auth/logout', { method: 'POST' })
+    } catch (err) {
+      pushLog('err', `logout: ${(err as Error).message}`)
+      return false
+    }
     setStatus({ loggedIn: false, steamid: null })
     setNeedsCode(null)
     setPendingApproval(false)
+    setPassword('')
+    setTwoFactorCode('')
+    setLoginError(null)
+    setGrid(null)
+    setDetail(null)
+    setCompare(null)
+    setDismissedErrors([])
+    setSellingIds([])
     pushLog('ok', 'Logged out')
+    return true
   }
 
   const refreshGrid = useCallback(async () => {
@@ -379,10 +342,33 @@ export default function App() {
     [pushLog],
   )
 
-  async function openCompare(hash: string) {
+  function openDetail(item: GridItem) {
     setCompare(null)
-    await loadCompare(hash)
+    setDetail(item)
+    void loadCompare(item.market_hash_name)
   }
+
+  const closeDetail = useCallback(() => {
+    setDetail(null)
+    setCompare(null)
+  }, [])
+
+  useEffect(() => {
+    document.documentElement.setAttribute('data-theme', theme)
+    localStorage.setItem('skin-hq-theme', theme)
+  }, [theme])
+
+  useEffect(() => {
+    if (!detail && !settingsOpen) return undefined
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        closeDetail()
+        setSettingsOpen(false)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [detail, settingsOpen, closeDetail])
 
   async function syncNow() {
     if (!status?.loggedIn) {
@@ -480,11 +466,13 @@ export default function App() {
   }, [status?.loggedIn, syncWatching, loadGrid, refreshGrid, pushLog])
 
   async function doSell(item: GridItem) {
+    if (!item.marketable || !!item.listing || sellingIds.includes(item.assetid)) return
     const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
     if (priceCents == null) {
       pushLog('err', `sell ${item.name}: enter a positive price in euros (e.g. 12,50)`)
       return
     }
+    setSellingIds((prev) => [...prev, item.assetid])
     try {
       const r = await api<{ success: boolean; needs_mobile_confirmation: boolean; message?: string }>('/api/sell', {
         method: 'POST',
@@ -494,6 +482,8 @@ export default function App() {
       pushLog(r.success ? 'ok' : 'err', `sell ${item.name} @ ${formatEuro(priceCents)}: ${state}${r.message ? ` (${r.message})` : ''}`)
     } catch (err) {
       pushLog('err', `sell ${item.name}: ${(err as Error).message}`)
+    } finally {
+      setSellingIds((prev) => prev.filter((id) => id !== item.assetid))
     }
   }
 
@@ -556,12 +546,13 @@ export default function App() {
     const showFloat = isCharm ? false : item.own ? item.own.float_value != null : csfloat?.float_value != null
     const showSeed = isCharm ? false : item.own ? item.own.paint_seed != null : csfloat?.paint_seed != null
     const showIdentity = isCharm || showFloat || showSeed
-    const sellsDisabled = !status?.loggedIn || !item.marketable || !!listing
     return (
       <article className="item-card" key={item.assetid}>
         <div className="c-head">
-          <h3 className="c-title">{baseName(item.name)}</h3>
-          {st && <span className="stat-badge">StatTrak</span>}
+          <h3 className="c-title">
+            {baseName(item.name)}
+            {st && <span className="stat-badge">StatTrak</span>}
+          </h3>
         </div>
 
         <div className="c-body">
@@ -600,79 +591,42 @@ export default function App() {
             )}
           </div>
 
-          <section className="c-sec">
-            <h4>Steam</h4>
-            <div className="c-row">
-              <span className="k" title="Current lowest listed price">
-                Floor
-              </span>
-              <span className="v price">{formatGridPrice(steam)}</span>
-            </div>
-            {(steam?.median_cents != null || steam?.volume != null) && (
-              <div className="c-row sub">
-                <span className="k" title="Median of sales in the last 24h">
-                  Median
+          <div className="c-prices">
+            <section className="c-sec">
+              <h4>Steam</h4>
+              <div className="c-row">
+                <span className="k" title="Current lowest listed price">
+                  Floor
                 </span>
-                <span className="v price">{steam?.median_cents != null ? formatAmount(steam.median_cents, 'EUR') : '—'}</span>
-                {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
+                <span className="v price">{formatGridPrice(steam)}</span>
               </div>
-            )}
-            {steam?.highest_buy_cents != null && (
-              <div className="c-row sub">
-                <span className="k" title="Best current buy offer">
-                  Buy depth
-                </span>
-                <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
-                {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
-              </div>
-            )}
-          </section>
-
-          <section className="c-sec">
-            <h4>CSFloat</h4>
-            <div className="c-row">
-              <span className="k">Floor</span>
-              <span className="v price">{formatGridPrice(csfloat)}</span>
-            </div>
-          </section>
-
-          <p
-            className="muted c-synced"
-            title={item.pricesSyncedAt ? `Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}` : 'No price snapshots yet'}
-          >
-            prices synced {item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}
-          </p>
-
-          <section className="c-sec sell">
-            <h4>Sell</h4>
-            <div className="c-status">
-              <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
-                {listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
-              </span>
-              {listing && <span className="mono price">{formatEuro(listing.price_cents)}</span>}
-            </div>
-            <div className="c-actions">
-              <input
-                placeholder="Sell €"
-                value={sellPrices[item.assetid] ?? ''}
-                onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void doSell(item)
-                }}
-              />
-              <button onClick={() => void doSell(item)} disabled={sellsDisabled}>
-                Sell
-              </button>
-              {listing && (
-                <button className="ghost" onClick={() => void doCancel(listing.listingid)}>
-                  Cancel
-                </button>
+              {(steam?.median_cents != null || steam?.volume != null) && (
+                <div className="c-row sub">
+                  <span className="k" title="Median of sales in the last 24h">
+                    Median
+                  </span>
+                  <span className="v price">{steam?.median_cents != null ? formatAmount(steam.median_cents, 'EUR') : '—'}</span>
+                  {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
+                </div>
               )}
-              <button className="ghost" onClick={() => void openCompare(item.market_hash_name)} disabled={compareLoading}>
-                Compare
-              </button>
-            </div>
-          </section>
+              {steam?.highest_buy_cents != null && (
+                <div className="c-row sub">
+                  <span className="k" title="Best current buy offer">
+                    Buy depth
+                  </span>
+                  <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
+                  {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
+                </div>
+              )}
+            </section>
+            <section className="c-sec">
+              <h4>CSFloat</h4>
+              <div className="c-row">
+                <span className="k">Floor</span>
+                <span className="v price">{formatGridPrice(csfloat)}</span>
+              </div>
+            </section>
+          </div>
         </div>
 
         {!isCharm && (ownStickersArr.length > 0 || ownKeychainsArr.length > 0) && (
@@ -758,31 +712,212 @@ export default function App() {
             ))}
           </div>
         )}
+
+        <div className="c-foot">
+          <p
+            className="muted c-synced"
+            title={item.pricesSyncedAt ? `Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}` : 'No price snapshots yet'}
+          >
+            prices synced {item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}
+          </p>
+          <div className="c-foot-right">
+            <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
+              {listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
+            </span>
+            <button className="btn btn-primary" onClick={() => openDetail(item)}>
+              {listing ? 'Manage listing' : item.marketable ? 'Sell' : 'Details'}
+            </button>
+          </div>
+        </div>
       </article>
     )
   }
 
-  const view = useMemo<{ groups: RarityGroup[] | null; items: GridItem[] | null }>(() => {
+  const renderDetailModal = (item: GridItem) => {
+    const current = grid?.items.find((i) => i.assetid === item.assetid) ?? item
+    const wear = wearOf(item.market_hash_name)
+    const st = isStatTrak(item.name, item.market_hash_name)
+    const isCharm = /^charm \|/i.test(item.name) || /^charm \|/i.test(item.market_hash_name)
+    const idParts: string[] = []
+    if (!isCharm) {
+      if (item.own?.float_value != null) idParts.push(`Float ${formatFloat(item.own.float_value)}`)
+      if (item.own?.paint_seed != null) idParts.push(`Seed ${item.own.paint_seed}`)
+    }
+    let stickerCount = 0
+    try {
+      const own = item.own?.stickers ? (JSON.parse(item.own.stickers) as { stickers?: unknown[] }) : null
+      if (own && Array.isArray(own.stickers)) stickerCount = own.stickers.length
+    } catch {
+      /* ignore malformed sticker payloads */
+    }
+    if (stickerCount === 0) stickerCount = parseStickers(item.prices.csfloat?.stickers).length
+    return (
+      <div className="modal-panel" role="dialog" aria-modal="true" aria-label={item.name} onClick={(e) => e.stopPropagation()}>
+        <div className="detail-head">
+          <div className="detail-img">
+            <img src={marketIcon(item)} alt="" loading="lazy" />
+          </div>
+          <div className="detail-title">
+            <h2>{item.name}</h2>
+            <div className="detail-meta">
+              {wear && <span className="wear-badge">{wear}</span>}
+              {st && <span className="stat-badge">StatTrak</span>}
+              {item.rarity?.name && <span className="badge">{item.rarity.name}</span>}
+            </div>
+            <p className="muted mono">{item.market_hash_name}</p>
+            {(idParts.length > 0 || stickerCount > 0) && (
+              <p className="muted detail-id">
+                {idParts.join(' · ')}
+                {stickerCount > 0 && `${idParts.length > 0 ? ' · ' : ''}${stickerCount} sticker${stickerCount > 1 ? 's' : ''} attached`}
+              </p>
+            )}
+          </div>
+          <button className="btn btn-icon modal-close" aria-label="Close" onClick={closeDetail}>
+            ×
+          </button>
+        </div>
+
+        <div className="detail-body">
+          {!compare ? (
+            <p className="muted">{compareLoading ? 'Fetching live prices…' : 'No live price data for this item yet.'}</p>
+          ) : (
+            <>
+              {compare.bestVenue && compare.deltaPercent != null && (
+                <p className="verdict">
+                  {compare.bestVenue === 'csfloat'
+                    ? `CSFloat nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than Steam.`
+                    : `Steam nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than CSFloat (before wallet-vs-cash trade-offs).`}
+                </p>
+              )}
+              <div className="compare-cols">
+                <div className="compare-col">
+                  <h3>Steam ({compare.listed ? 'listed' : 'not listed'})</h3>
+                  <table>
+                    <tbody>
+                      <tr>
+                        <td>Floor (buyer pays)</td>
+                        <td>{compare.steam.lowest_cents != null ? formatAmount(compare.steam.lowest_cents, 'EUR') : '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Volume 24h</td>
+                        <td>{compare.steam.volume ?? '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Top buy order</td>
+                        <td>{compare.steam.highest_buy_cents != null ? formatAmount(compare.steam.highest_buy_cents, 'EUR') : '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Buy order quantity</td>
+                        <td>{compare.steam.buy_count ?? '—'}</td>
+                      </tr>
+                      <tr className="net">
+                        <td>Net after ~15% fee</td>
+                        <td>{compare.steam.net_cents != null ? formatAmount(compare.steam.net_cents, 'EUR') : '—'}</td>
+                      </tr>
+                      {compare.steam.error && (
+                        <tr>
+                          <td colSpan={2} className="muted">
+                            {compare.steam.error}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="compare-col">
+                  <h3>CSFloat cash-out</h3>
+                  {compare.csfloat ? (
+                    <table>
+                      <tbody>
+                        <tr>
+                          <td>Floor (buyer pays)</td>
+                          <td>{compare.csfloat.lowest_cents != null ? formatAmount(compare.csfloat.lowest_cents, 'USD') : '—'}</td>
+                        </tr>
+                        <tr>
+                          <td>Float ref</td>
+                          <td>{formatFloat(compare.csfloat.float_value)}</td>
+                        </tr>
+                        <tr>
+                          <td>Paint seed</td>
+                          <td>{compare.csfloat.paint_seed ?? '—'}</td>
+                        </tr>
+                        <tr>
+                          <td>Stickers</td>
+                          <td>
+                            {compare.csfloat.stickers?.length
+                              ? compare.csfloat.stickers.map((s) => (s.slot > 0 ? `[${s.slot}] ` : '') + s.name).join(', ')
+                              : '—'}
+                          </td>
+                        </tr>
+                        <tr className="net">
+                          <td>Net after 2% fee</td>
+                          <td>{compare.csfloat.net_cents != null ? formatAmount(compare.csfloat.net_cents, 'USD') : '—'}</td>
+                        </tr>
+                        {compare.csfloat.error && (
+                          <tr>
+                            <td colSpan={2} className="muted">
+                              {compare.csfloat.error}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="muted">No CSFloat data synced for this item yet.</p>
+                  )}
+                </div>
+              </div>
+              <p className="muted footnote">
+                Steam prices in EUR, CSFloat in USD; nets converted with a fixed rate for comparison. Steam proceeds stay in your
+                wallet (not cash); CSFloat is a real cash-out.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="modal-sell">
+          <div className="c-status">
+            <span className={`badge ${current.listing || current.marketable ? 'ok' : 'muted'}`}>
+              {current.listing ? 'listed' : current.marketable ? 'marketable' : 'restricted'}
+            </span>
+            {current.listing?.price_cents != null && <span className="mono price">{formatEuro(current.listing.price_cents)}</span>}
+          </div>
+          <div className="sell-row">
+            <input
+              placeholder="Sell €"
+              value={sellPrices[current.assetid] ?? ''}
+              onChange={(e) => setSellPrices((prev) => ({ ...prev, [current.assetid]: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void doSell(current)
+              }}
+              disabled={!current.marketable || !!current.listing || sellingIds.includes(current.assetid)}
+              inputMode="decimal"
+              autoComplete="off"
+            />
+            <button
+              className="btn btn-primary"
+              onClick={() => void doSell(current)}
+              disabled={!current.marketable || !!current.listing || sellingIds.includes(current.assetid)}
+            >
+              {sellingIds.includes(current.assetid) ? 'Selling…' : 'Sell'}
+            </button>
+            {current.listing && (
+              <button className="btn btn-ghost" onClick={() => current.listing && void doCancel(current.listing.listingid)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  const view = useMemo<{ groups: RarityGroup<GridItem>[] | null; items: GridItem[] | null }>(() => {
     if (!grid) return { groups: null, items: null }
     const items = listedOnly ? grid.items.filter((i) => i.listing) : grid.items
-    if (!groupByRarity) return { groups: null, items }
-    const groups = new Map<string, GridItem[]>()
-    for (const item of items) {
-      const key = item.rarity?.internal_name ?? 'unranked'
-      const arr = groups.get(key) ?? []
-      arr.push(item)
-      groups.set(key, arr)
-    }
-    const sorted: RarityGroup[] = Array.from(groups.entries())
-      .map(([key, gitems]) => ({
-        key,
-        label: gitems[0]?.rarity?.name ?? 'Other',
-        rank: gitems[0]?.rarity?.rank ?? 99,
-        items: gitems,
-      }))
-      .sort((a, b) => a.rank - b.rank)
-    return { groups: sorted, items: null }
-  }, [grid, groupByRarity, listedOnly])
+    if (!grouping) return { groups: null, items }
+    return { groups: groupByRarity(items), items: null }
+  }, [grid, grouping, listedOnly])
 
   useEffect(() => {
     // Logged-out = no inventory view at all: every inventory-related section is
@@ -797,192 +932,150 @@ export default function App() {
 
   return (
     <div className="app">
-      <header>
+      <header className="appbar">
         <h1>SkinHQ</h1>
-        <span className="build">
-          {status?.loggedIn ? `signed in as ${status.accountName ?? status.steamid}` : 'not signed in to Steam'}
-        </span>
+        <div className="appbar-right">
+          {status?.loggedIn && (
+            <span className="acct" title={status.steamid ?? undefined}>
+              {status.accountName ?? status.steamid}
+            </span>
+          )}
+          <button
+            className="btn btn-icon"
+            onClick={() => setSettingsOpen(true)}
+            aria-label="Settings"
+            title="Settings"
+          >
+            <svg
+              width="17"
+              height="17"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              aria-hidden="true"
+            >
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          </button>
+        </div>
       </header>
 
-      <section className="card auth">
-        {status?.loggedIn ? (
-          <div className="auth-signed-in">
-            <span className="muted">Signed in as {status.accountName ?? status.steamid}</span>
-            <button onClick={() => void doLogout()}>Log out</button>
-          </div>
-        ) : (
-          <>
-            {status?.session?.state === 'dead' && <p className="hint hint-err">Steam session expired — sign in again.</p>}
-            <input placeholder="Steam account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
-            <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            {needsCode != null ? (
-              <>
-                <p className="hint">
-                  {needsCode === 'email'
-                    ? 'Steam sent a guard code to your email — enter it below.'
-                    : 'Enter the current Steam Guard code from the Steam Mobile app.'}
-                </p>
-                <input placeholder="Steam Guard code" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} />
-                <button onClick={() => void submitCode()} disabled={!twoFactorCode.trim()}>
-                  Sign in with code
-                </button>
-              </>
-            ) : pendingApproval ? (
-              <>
-                <p className="hint">Approve the sign-in prompt in your Steam Mobile app.</p>
-                <button disabled>Waiting for approval…</button>
-                <button onClick={() => void doLogout()}>Cancel</button>
-              </>
-            ) : (
-              <button onClick={() => void doLogin()} disabled={!accountName || !password}>
-                Sign in
+      {status && !status.loggedIn && (
+        <section className="card signin">
+          <h2>Sign in to Steam</h2>
+          {status.session?.state === 'dead' && <p className="hint hint-err">Steam session expired — sign in again.</p>}
+          {loginError && <p className="hint hint-err">{loginError}</p>}
+          <input
+            placeholder="Steam account name"
+            value={accountName}
+            onChange={(e) => {
+              setAccountName(e.target.value)
+              setLoginError(null)
+            }}
+          />
+          <input
+            placeholder="Password"
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              setLoginError(null)
+            }}
+          />
+          {needsCode != null ? (
+            <>
+              <p className="hint">
+                {needsCode === 'email'
+                  ? 'Steam sent a guard code to your email — enter it below.'
+                  : 'Enter the current Steam Guard code from the Steam Mobile app.'}
+              </p>
+              <input
+                placeholder="Steam Guard code"
+                value={twoFactorCode}
+                onChange={(e) => {
+                  setTwoFactorCode(e.target.value)
+                  setLoginError(null)
+                }}
+              />
+              <button className="btn btn-primary" onClick={() => void submitCode()} disabled={!twoFactorCode.trim()}>
+                Sign in with code
               </button>
-            )}
-          </>
-        )}
-      </section>
+            </>
+          ) : pendingApproval ? (
+            <>
+              <p className="hint">Approve the sign-in prompt in your Steam Mobile app.</p>
+              <button className="btn btn-primary" disabled>
+                Waiting for approval…
+              </button>
+              <button className="btn btn-ghost" onClick={() => void doLogout()}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-primary" onClick={() => void doLogin()} disabled={!accountName || !password}>
+              Sign in
+            </button>
+          )}
+        </section>
+      )}
 
 {status?.loggedIn && (
-        <section className="card actions">
-          <button onClick={() => void syncNow()} disabled={!status?.loggedIn || gridLoading}>
+        <section className="statusbar">
+          <button className="btn btn-primary" onClick={() => void syncNow()} disabled={gridLoading}>
             {gridLoading ? 'Syncing…' : 'Sync now'}
           </button>
           {syncDisplay?.running && (
-            <span className="mono sync-progress">
+            <span className="chip prog">
               {syncDisplay.phase}
               {syncDisplay.phase === 'prices' && syncDisplay.total > 0 ? ` ${syncDisplay.current}/${syncDisplay.total}` : '…'}
             </span>
           )}
-          {!syncDisplay?.running && syncDisplay?.last.prices && <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>}
-          {status?.session?.state === 'throttled' && (
-            <p className="hint">Steam is rate-limiting this session — sync may be delayed.</p>
+          {!syncDisplay?.running && syncDisplay?.last.prices && (
+            <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>
           )}
           {!!syncDisplay?.autoSyncMin && syncDisplay.autoSyncMin > 0 && (
-            <span className="muted">{formatAutoSyncMin(syncDisplay.autoSyncMin)}</span>
+            <span className="chip">{formatAutoSyncMin(syncDisplay.autoSyncMin)}</span>
+          )}
+          {status?.session?.state === 'throttled' && (
+            <span className="chip chip-warn">Steam rate-limiting this session — sync may be delayed.</span>
           )}
         </section>
       )}
 
-      {status?.loggedIn && compare && (
-        <section className="card compare">
-          <div className="compare-head">
-            <div>
-              <h2>
-                Compare <span className="mono">{baseName(compare.name)}</span>
-              </h2>
-              <p className="muted">
-                Steam wallet after ~15% fee vs CSFloat cash-out after 2% fee ({compare.netUsd.steam != null && compare.netUsd.csfloat != null ? 'net in USD' : 'net in native currency'}).
-              </p>
-            </div>
-            <button className="ghost" onClick={() => setCompare(null)}>
-              Close
-            </button>
-          </div>
-          {compare.bestVenue && compare.deltaPercent != null && (
-            <p className="verdict">
-              {compare.bestVenue === 'csfloat'
-                ? `CSFloat nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than Steam.`
-                : `Steam nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than CSFloat (before wallet-vs-cash trade-offs).`}
-            </p>
-          )}
-          <div className="compare-cols">
-            <div className="compare-col">
-              <h3>Steam ({compare.listed ? 'listed' : 'not listed'})</h3>
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Floor (buyer pays)</td>
-                    <td>{compare.steam.lowest_cents != null ? formatAmount(compare.steam.lowest_cents, 'EUR') : '—'}</td>
-                  </tr>
-                  <tr>
-                    <td>Volume 24h</td>
-                    <td>{compare.steam.volume ?? '—'}</td>
-                  </tr>
-                  <tr>
-                    <td>Top buy order</td>
-                    <td>{compare.steam.highest_buy_cents != null ? formatAmount(compare.steam.highest_buy_cents, 'EUR') : '—'}</td>
-                  </tr>
-                  <tr>
-                    <td>Buy order quantity</td>
-                    <td>{compare.steam.buy_count ?? '—'}</td>
-                  </tr>
-                  <tr className="net">
-                    <td>Net after ~15% fee</td>
-                    <td>{compare.steam.net_cents != null ? formatAmount(compare.steam.net_cents, 'EUR') : '—'}</td>
-                  </tr>
-                  {compare.steam.error && (
-                    <tr>
-                      <td colSpan={2} className="muted">
-                        {compare.steam.error}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="compare-col">
-              <h3>CSFloat cash-out</h3>
-              {compare.csfloat ? (
-                <table>
-                  <tbody>
-                    <tr>
-                      <td>Floor (buyer pays)</td>
-                      <td>{compare.csfloat.lowest_cents != null ? formatAmount(compare.csfloat.lowest_cents, 'USD') : '—'}</td>
-                    </tr>
-                    <tr>
-                      <td>Float ref</td>
-                      <td>{formatFloat(compare.csfloat.float_value)}</td>
-                    </tr>
-                    <tr>
-                      <td>Paint seed</td>
-                      <td>{compare.csfloat.paint_seed ?? '—'}</td>
-                    </tr>
-                    <tr>
-                      <td>Stickers</td>
-                      <td>
-                        {compare.csfloat.stickers?.length
-                          ? compare.csfloat.stickers.map((s) => (s.slot > 0 ? `[${s.slot}] ` : '') + s.name).join(', ')
-                          : '—'}
-                      </td>
-                    </tr>
-                    <tr className="net">
-                      <td>Net after 2% fee</td>
-                      <td>{compare.csfloat.net_cents != null ? formatAmount(compare.csfloat.net_cents, 'USD') : '—'}</td>
-                    </tr>
-                    {compare.csfloat.error && (
-                      <tr>
-                        <td colSpan={2} className="muted">
-                          {compare.csfloat.error}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              ) : (
-                <p className="muted">No CSFloat data synced for this item yet.</p>
-              )}
-            </div>
-          </div>
-          <p className="muted footnote">
-            Steam prices in EUR, CSFloat in USD; nets converted with a fixed rate for comparison. Steam proceeds stay in your
-            wallet (not cash); CSFloat is a real cash-out.
-          </p>
-        </section>
-      )}
-
-      {status?.loggedIn && !!(syncDisplay?.errors.length ?? 0) && (
-        <section className="card sync-errors">
-          <h3>Sync issues</h3>
-          <ul>
-            {(syncDisplay?.errors ?? []).map((e, idx) => (
-              <li key={idx}>{e}</li>
+      {status?.loggedIn && (syncDisplay?.errors ?? []).some((e) => !dismissedErrors.includes(e)) && (
+        <div className="toasts">
+          {(syncDisplay?.errors ?? [])
+            .filter((e) => !dismissedErrors.includes(e))
+            .map((e, idx) => (
+              <div className="toast" key={idx}>
+                <span>{e}</span>
+                <button
+                  className="btn btn-icon"
+                  aria-label="Dismiss"
+                  onClick={() => setDismissedErrors((prev) => [...prev, e])}
+                >
+                  ×
+                </button>
+              </div>
             ))}
-          </ul>
-        </section>
+        </div>
+      )}
+
+      {status?.loggedIn && detail && (
+        <>
+          <div className="scrim" onClick={closeDetail} />
+          <div className="modal" onClick={closeDetail}>
+            {renderDetailModal(detail)}
+          </div>
+        </>
       )}
 
       {status?.loggedIn && (
-        <section className="card grid-card">
+        <section className="workspace">
         <div className="grid-head">
           <div>
             <h2>Inventory</h2>
@@ -993,11 +1086,11 @@ export default function App() {
             </p>
           </div>
           <div className="head-tools">
-            <button className="toggle" onClick={() => setListedOnly((v) => !v)}>
+            <button className="btn btn-ghost" onClick={() => setListedOnly((v) => !v)}>
               {listedOnly ? 'All items' : 'Listed only'}
             </button>
-            <button className="toggle" onClick={() => setGroupByRarity((v) => !v)}>
-              {groupByRarity ? 'Flat list' : 'Group by rarity'}
+            <button className="btn btn-ghost" onClick={() => setGrouping((v) => !v)}>
+              {grouping ? 'Flat list' : 'Group by rarity'}
             </button>
           </div>
         </div>
@@ -1005,39 +1098,127 @@ export default function App() {
           <p className="muted">Nothing sellable yet. Sign in and hit “Sync now” to pull your inventory and market prices.</p>
         )}
         {view?.groups ? (
-          <div className="cards">
-            {view.groups.map((group) => (
-              <Fragment key={group.key}>
-                <div className="group-head">
-                  <span className="group-name">{group.label}</span>
-                  <span className="group-count">{group.items.length}</span>
-                </div>
-                {group.items.map(renderCard)}
-              </Fragment>
-            ))}
-          </div>
+          view.groups.map((group) => (
+            <div className="group" key={group.key}>
+              <div className="group-head">
+                <span className="group-name">{group.label}</span>
+                <span className="group-count">{group.items.length}</span>
+              </div>
+              <div className="cards">{group.items.map(renderCard)}</div>
+            </div>
+          ))
         ) : grid && grid.items.length > 0 ? (
           <div className="cards">{(view?.items ?? grid.items).map(renderCard)}</div>
         ) : null}
       </section>
       )}
 
-      <section className="card log">
-        <h2>Log</h2>
-        {log.length === 0 && <p className="muted">No activity yet.</p>}
-        <ul>
-          {log.map((line, i) => (
-            <li key={i} className={line.kind}>
-              {line.text}
-            </li>
-          ))}
-        </ul>
-      </section>
-
       <footer>
-        build {__BUILD_SHA__}
-        {__BUILD_TIME__ ? ` · ${__BUILD_TIME__}` : ''} · repo {__REPO__}
+        <button className="btn btn-ghost btn-sm" onClick={() => setDockOpen((v) => !v)}>
+          {dockOpen ? 'Hide activity' : 'Show activity'}
+        </button>
       </footer>
+
+      {log.length > 0 && (
+        <aside className={`dock${dockOpen ? '' : ' dock-closed'}`}>
+          <div className="dock-head">
+            <span>Activity</span>
+            <span className="group-count">{log.length}</span>
+            <button
+              className="btn btn-icon"
+              aria-label={dockOpen ? 'Collapse activity' : 'Expand activity'}
+              onClick={() => setDockOpen((v) => !v)}
+            >
+              {dockOpen ? '▾' : '▴'}
+            </button>
+          </div>
+          <ul>
+            {[...log].reverse().map((line, i) => (
+              <li key={i} className={line.kind}>
+                {line.text}
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
+
+      {settingsOpen && (
+        <div className="settings-overlay" role="dialog" aria-modal="true" aria-label="Settings" onClick={() => setSettingsOpen(false)}>
+          <div className="settings-card" onClick={(e) => e.stopPropagation()}>
+            <button className="btn btn-icon card-close" aria-label="Close settings" onClick={() => setSettingsOpen(false)}>
+              ×
+            </button>
+
+            <div className="settings-brand">
+              <span className="settings-logo" aria-hidden="true" />
+              <h2>SkinHQ</h2>
+              <p className="settings-sub">Steam + CSFloat listing workspace · local &amp; single-user</p>
+            </div>
+
+            {status?.loggedIn && (
+              <section className="settings-sec">
+                <span className="settings-heading">Account</span>
+                <div className="settings-row">
+                  <span className="mono muted">
+                    {status.accountName ?? 'Signed in'}
+                    {status.steamid ? ` · ${status.steamid}` : ''}
+                  </span>
+                  <button className="btn btn-ghost" onClick={() => void doLogout().then((ok) => { if (ok) setSettingsOpen(false) })}>
+                    Log out
+                  </button>
+                </div>
+              </section>
+            )}
+
+            <section className="settings-sec">
+              <span className="settings-heading">UI style</span>
+              <div className="theme-picker" role="radiogroup" aria-label="UI style">
+                {THEMES.map((t) => (
+                  <button
+                    key={t.id}
+                    type="button"
+                    role="radio"
+                    aria-checked={theme === t.id}
+                    className={`theme-chip${theme === t.id ? ' active' : ''}`}
+                    onClick={() => setTheme(t.id)}
+                  >
+                    <span className="theme-swatch" style={{ background: t.bg }}>
+                      <span className="theme-swatch-dot" style={{ background: t.accent }} />
+                    </span>
+                    <span className="theme-label">{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            <p className="settings-build">
+              {__BUILD_SHA__ === 'dev' ? (
+                'development build'
+              ) : (
+                <>
+                  <a href={`https://github.com/${__REPO__}/commit/${__BUILD_SHA__}`} target="_blank" rel="noopener noreferrer">
+                    {__BUILD_SHA__.slice(0, 7)}
+                  </a>
+                  {__BUILD_TIME__ ? (
+                    <>
+                      {' · '}
+                      {new Date(__BUILD_TIME__).toLocaleDateString([], {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </>
+                  ) : null}
+                  {' · '}
+                  <a href={`https://github.com/${__REPO__}/issues`} target="_blank" rel="noopener noreferrer">
+                    Report an issue
+                  </a>
+                </>
+              )}
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

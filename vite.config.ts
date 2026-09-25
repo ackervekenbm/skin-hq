@@ -19,9 +19,9 @@ export default defineConfig({
   define: {
     // Injected at build time. Locally (vite dev) these fall back to dev
     // values; the Docker/CI build can pass them as env vars.
-    __BUILD_SHA__: JSON.stringify(process.env.COMMIT_SHA ?? 'dev'),
-    __BUILD_TIME__: JSON.stringify(process.env.BUILD_TIME ?? ''),
-    __REPO__: JSON.stringify(process.env.GITHUB_REPOSITORY ?? 'ackervekenbm/skin-hq'),
+    __BUILD_SHA__: JSON.stringify(process.env.COMMIT_SHA || 'dev'),
+    __BUILD_TIME__: JSON.stringify(process.env.BUILD_TIME || ''),
+    __REPO__: JSON.stringify(process.env.GITHUB_REPOSITORY || 'ackervekenbm/skin-hq'),
   },
   plugins: [react()],
 })
