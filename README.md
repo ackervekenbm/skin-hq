@@ -73,6 +73,9 @@ Docker volume `skin-hq-data`, so redeploys keep your session and cache.
 > `echo $GITHUB_TOKEN | docker login ghcr.io -u <owner> --password-stdin`.
 > Updating: `docker compose pull && docker compose up -d`.
 
+OpenMediaVault (OMV) has its own walkthrough with file placement,
+troubleshooting and the upgrade path: `docs/deploy-openmediavault.md`.
+
 ## Scripts
 
 | Command | Purpose |
