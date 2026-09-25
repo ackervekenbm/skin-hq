@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 interface AuthStatus {
   loggedIn: boolean
@@ -201,6 +201,9 @@ export default function App() {
   const [sellPrices, setSellPrices] = useState<Record<string, string>>({})
   const [compare, setCompare] = useState<CompareRow | null>(null)
   const [compareLoading, setCompareLoading] = useState(false)
+  const [detail, setDetail] = useState<GridItem | null>(null)
+  const [dockOpen, setDockOpen] = useState(false)
+  const [dismissedErrors, setDismissedErrors] = useState<string[]>([])
   const [log, setLog] = useState<LogLine[]>([])
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
   const [syncWatching, setSyncWatching] = useState(false)
@@ -379,10 +382,25 @@ export default function App() {
     [pushLog],
   )
 
-  async function openCompare(hash: string) {
+  function openDetail(item: GridItem) {
     setCompare(null)
-    await loadCompare(hash)
+    setDetail(item)
+    void loadCompare(item.market_hash_name)
   }
+
+  const closeDetail = useCallback(() => {
+    setDetail(null)
+    setCompare(null)
+  }, [])
+
+  useEffect(() => {
+    if (!detail) return undefined
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') closeDetail()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [detail, closeDetail])
 
   async function syncNow() {
     if (!status?.loggedIn) {
@@ -556,7 +574,6 @@ export default function App() {
     const showFloat = isCharm ? false : item.own ? item.own.float_value != null : csfloat?.float_value != null
     const showSeed = isCharm ? false : item.own ? item.own.paint_seed != null : csfloat?.paint_seed != null
     const showIdentity = isCharm || showFloat || showSeed
-    const sellsDisabled = !status?.loggedIn || !item.marketable || !!listing
     return (
       <article className="item-card" key={item.assetid}>
         <div className="c-head">
@@ -600,79 +617,42 @@ export default function App() {
             )}
           </div>
 
-          <section className="c-sec">
-            <h4>Steam</h4>
-            <div className="c-row">
-              <span className="k" title="Current lowest listed price">
-                Floor
-              </span>
-              <span className="v price">{formatGridPrice(steam)}</span>
-            </div>
-            {(steam?.median_cents != null || steam?.volume != null) && (
-              <div className="c-row sub">
-                <span className="k" title="Median of sales in the last 24h">
-                  Median
+          <div className="c-prices">
+            <section className="c-sec">
+              <h4>Steam</h4>
+              <div className="c-row">
+                <span className="k" title="Current lowest listed price">
+                  Floor
                 </span>
-                <span className="v price">{steam?.median_cents != null ? formatAmount(steam.median_cents, 'EUR') : '—'}</span>
-                {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
+                <span className="v price">{formatGridPrice(steam)}</span>
               </div>
-            )}
-            {steam?.highest_buy_cents != null && (
-              <div className="c-row sub">
-                <span className="k" title="Best current buy offer">
-                  Buy depth
-                </span>
-                <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
-                {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
-              </div>
-            )}
-          </section>
-
-          <section className="c-sec">
-            <h4>CSFloat</h4>
-            <div className="c-row">
-              <span className="k">Floor</span>
-              <span className="v price">{formatGridPrice(csfloat)}</span>
-            </div>
-          </section>
-
-          <p
-            className="muted c-synced"
-            title={item.pricesSyncedAt ? `Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}` : 'No price snapshots yet'}
-          >
-            prices synced {item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}
-          </p>
-
-          <section className="c-sec sell">
-            <h4>Sell</h4>
-            <div className="c-status">
-              <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
-                {listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
-              </span>
-              {listing && <span className="mono price">{formatEuro(listing.price_cents)}</span>}
-            </div>
-            <div className="c-actions">
-              <input
-                placeholder="Sell €"
-                value={sellPrices[item.assetid] ?? ''}
-                onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') void doSell(item)
-                }}
-              />
-              <button onClick={() => void doSell(item)} disabled={sellsDisabled}>
-                Sell
-              </button>
-              {listing && (
-                <button className="ghost" onClick={() => void doCancel(listing.listingid)}>
-                  Cancel
-                </button>
+              {(steam?.median_cents != null || steam?.volume != null) && (
+                <div className="c-row sub">
+                  <span className="k" title="Median of sales in the last 24h">
+                    Median
+                  </span>
+                  <span className="v price">{steam?.median_cents != null ? formatAmount(steam.median_cents, 'EUR') : '—'}</span>
+                  {steam?.volume != null && <span className="vol">×{steam.volume}</span>}
+                </div>
               )}
-              <button className="ghost" onClick={() => void openCompare(item.market_hash_name)} disabled={compareLoading}>
-                Compare
-              </button>
-            </div>
-          </section>
+              {steam?.highest_buy_cents != null && (
+                <div className="c-row sub">
+                  <span className="k" title="Best current buy offer">
+                    Buy depth
+                  </span>
+                  <span className="v">{formatAmount(steam.highest_buy_cents, 'EUR')}</span>
+                  {steam?.buy_count != null && <span className="vol">×{steam.buy_count}</span>}
+                </div>
+              )}
+            </section>
+            <section className="c-sec">
+              <h4>CSFloat</h4>
+              <div className="c-row">
+                <span className="k">Floor</span>
+                <span className="v price">{formatGridPrice(csfloat)}</span>
+              </div>
+            </section>
+          </div>
         </div>
 
         {!isCharm && (ownStickersArr.length > 0 || ownKeychainsArr.length > 0) && (
@@ -758,6 +738,23 @@ export default function App() {
             ))}
           </div>
         )}
+
+        <div className="c-foot">
+          <p
+            className="muted c-synced"
+            title={item.pricesSyncedAt ? `Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}` : 'No price snapshots yet'}
+          >
+            prices synced {item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}
+          </p>
+          <div className="c-foot-right">
+            <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
+              {listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
+            </span>
+            <button className="btn btn-primary" onClick={() => openDetail(item)}>
+              {listing ? 'Manage listing' : item.marketable ? 'Sell' : 'Details'}
+            </button>
+          </div>
+        </div>
       </article>
     )
   }
@@ -797,192 +794,249 @@ export default function App() {
 
   return (
     <div className="app">
-      <header>
+      <header className="appbar">
         <h1>SkinHQ</h1>
-        <span className="build">
-          {status?.loggedIn ? `signed in as ${status.accountName ?? status.steamid}` : 'not signed in to Steam'}
-        </span>
+        <div className="appbar-right">
+          {status?.loggedIn && (
+            <>
+              <span className="acct" title={status.steamid ?? undefined}>
+                {status.accountName ?? status.steamid}
+              </span>
+              <button className="btn btn-ghost" onClick={() => void doLogout()}>
+                Log out
+              </button>
+            </>
+          )}
+          <span className="build">
+            build {__BUILD_SHA__}
+            {__BUILD_TIME__ ? ` · ${__BUILD_TIME__}` : ''}
+          </span>
+        </div>
       </header>
 
-      <section className="card auth">
-        {status?.loggedIn ? (
-          <div className="auth-signed-in">
-            <span className="muted">Signed in as {status.accountName ?? status.steamid}</span>
-            <button onClick={() => void doLogout()}>Log out</button>
-          </div>
-        ) : (
-          <>
-            {status?.session?.state === 'dead' && <p className="hint hint-err">Steam session expired — sign in again.</p>}
-            <input placeholder="Steam account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
-            <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
-            {needsCode != null ? (
-              <>
-                <p className="hint">
-                  {needsCode === 'email'
-                    ? 'Steam sent a guard code to your email — enter it below.'
-                    : 'Enter the current Steam Guard code from the Steam Mobile app.'}
-                </p>
-                <input placeholder="Steam Guard code" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} />
-                <button onClick={() => void submitCode()} disabled={!twoFactorCode.trim()}>
-                  Sign in with code
-                </button>
-              </>
-            ) : pendingApproval ? (
-              <>
-                <p className="hint">Approve the sign-in prompt in your Steam Mobile app.</p>
-                <button disabled>Waiting for approval…</button>
-                <button onClick={() => void doLogout()}>Cancel</button>
-              </>
-            ) : (
-              <button onClick={() => void doLogin()} disabled={!accountName || !password}>
-                Sign in
+      {status && !status.loggedIn && (
+        <section className="card signin">
+          <h2>Sign in to Steam</h2>
+          {status.session?.state === 'dead' && <p className="hint hint-err">Steam session expired — sign in again.</p>}
+          <input placeholder="Steam account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
+          <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          {needsCode != null ? (
+            <>
+              <p className="hint">
+                {needsCode === 'email'
+                  ? 'Steam sent a guard code to your email — enter it below.'
+                  : 'Enter the current Steam Guard code from the Steam Mobile app.'}
+              </p>
+              <input placeholder="Steam Guard code" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} />
+              <button className="btn btn-primary" onClick={() => void submitCode()} disabled={!twoFactorCode.trim()}>
+                Sign in with code
               </button>
-            )}
-          </>
-        )}
-      </section>
+            </>
+          ) : pendingApproval ? (
+            <>
+              <p className="hint">Approve the sign-in prompt in your Steam Mobile app.</p>
+              <button className="btn btn-primary" disabled>
+                Waiting for approval…
+              </button>
+              <button className="btn btn-ghost" onClick={() => void doLogout()}>
+                Cancel
+              </button>
+            </>
+          ) : (
+            <button className="btn btn-primary" onClick={() => void doLogin()} disabled={!accountName || !password}>
+              Sign in
+            </button>
+          )}
+        </section>
+      )}
 
 {status?.loggedIn && (
-        <section className="card actions">
-          <button onClick={() => void syncNow()} disabled={!status?.loggedIn || gridLoading}>
+        <section className="statusbar">
+          <button className="btn btn-primary" onClick={() => void syncNow()} disabled={gridLoading}>
             {gridLoading ? 'Syncing…' : 'Sync now'}
           </button>
           {syncDisplay?.running && (
-            <span className="mono sync-progress">
+            <span className="chip prog">
               {syncDisplay.phase}
               {syncDisplay.phase === 'prices' && syncDisplay.total > 0 ? ` ${syncDisplay.current}/${syncDisplay.total}` : '…'}
             </span>
           )}
-          {!syncDisplay?.running && syncDisplay?.last.prices && <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>}
-          {status?.session?.state === 'throttled' && (
-            <p className="hint">Steam is rate-limiting this session — sync may be delayed.</p>
+          {!syncDisplay?.running && syncDisplay?.last.prices && (
+            <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>
           )}
           {!!syncDisplay?.autoSyncMin && syncDisplay.autoSyncMin > 0 && (
-            <span className="muted">{formatAutoSyncMin(syncDisplay.autoSyncMin)}</span>
+            <span className="chip">{formatAutoSyncMin(syncDisplay.autoSyncMin)}</span>
+          )}
+          {status?.session?.state === 'throttled' && (
+            <span className="chip chip-warn">Steam rate-limiting this session — sync may be delayed.</span>
           )}
         </section>
       )}
 
-      {status?.loggedIn && compare && (
-        <section className="card compare">
-          <div className="compare-head">
-            <div>
-              <h2>
-                Compare <span className="mono">{baseName(compare.name)}</span>
-              </h2>
-              <p className="muted">
-                Steam wallet after ~15% fee vs CSFloat cash-out after 2% fee ({compare.netUsd.steam != null && compare.netUsd.csfloat != null ? 'net in USD' : 'net in native currency'}).
-              </p>
+      {status?.loggedIn && (syncDisplay?.errors ?? []).some((e) => !dismissedErrors.includes(e)) && (
+        <div className="toasts">
+          {(syncDisplay?.errors ?? [])
+            .filter((e) => !dismissedErrors.includes(e))
+            .map((e, idx) => (
+              <div className="toast" key={idx}>
+                <span>{e}</span>
+                <button
+                  className="btn btn-icon"
+                  aria-label="Dismiss"
+                  onClick={() => setDismissedErrors((prev) => [...prev, e])}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+        </div>
+      )}
+
+      {status?.loggedIn && detail && (
+        <>
+          <div className="scrim" onClick={closeDetail} />
+          <aside className="drawer">
+            <div className="drawer-head">
+              <div className="drawer-title">
+                <h2>{baseName(detail.name)}</h2>
+                {isStatTrak(detail.name, detail.market_hash_name) && <span className="stat-badge">StatTrak</span>}
+                <p className="muted mono">{detail.market_hash_name}</p>
+              </div>
+              <button className="btn btn-ghost" onClick={closeDetail}>
+                Close
+              </button>
             </div>
-            <button className="ghost" onClick={() => setCompare(null)}>
-              Close
-            </button>
-          </div>
-          {compare.bestVenue && compare.deltaPercent != null && (
-            <p className="verdict">
-              {compare.bestVenue === 'csfloat'
-                ? `CSFloat nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than Steam.`
-                : `Steam nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than CSFloat (before wallet-vs-cash trade-offs).`}
-            </p>
-          )}
-          <div className="compare-cols">
-            <div className="compare-col">
-              <h3>Steam ({compare.listed ? 'listed' : 'not listed'})</h3>
-              <table>
-                <tbody>
-                  <tr>
-                    <td>Floor (buyer pays)</td>
-                    <td>{compare.steam.lowest_cents != null ? formatAmount(compare.steam.lowest_cents, 'EUR') : '—'}</td>
-                  </tr>
-                  <tr>
-                    <td>Volume 24h</td>
-                    <td>{compare.steam.volume ?? '—'}</td>
-                  </tr>
-                  <tr>
-                    <td>Top buy order</td>
-                    <td>{compare.steam.highest_buy_cents != null ? formatAmount(compare.steam.highest_buy_cents, 'EUR') : '—'}</td>
-                  </tr>
-                  <tr>
-                    <td>Buy order quantity</td>
-                    <td>{compare.steam.buy_count ?? '—'}</td>
-                  </tr>
-                  <tr className="net">
-                    <td>Net after ~15% fee</td>
-                    <td>{compare.steam.net_cents != null ? formatAmount(compare.steam.net_cents, 'EUR') : '—'}</td>
-                  </tr>
-                  {compare.steam.error && (
-                    <tr>
-                      <td colSpan={2} className="muted">
-                        {compare.steam.error}
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-            <div className="compare-col">
-              <h3>CSFloat cash-out</h3>
-              {compare.csfloat ? (
-                <table>
-                  <tbody>
-                    <tr>
-                      <td>Floor (buyer pays)</td>
-                      <td>{compare.csfloat.lowest_cents != null ? formatAmount(compare.csfloat.lowest_cents, 'USD') : '—'}</td>
-                    </tr>
-                    <tr>
-                      <td>Float ref</td>
-                      <td>{formatFloat(compare.csfloat.float_value)}</td>
-                    </tr>
-                    <tr>
-                      <td>Paint seed</td>
-                      <td>{compare.csfloat.paint_seed ?? '—'}</td>
-                    </tr>
-                    <tr>
-                      <td>Stickers</td>
-                      <td>
-                        {compare.csfloat.stickers?.length
-                          ? compare.csfloat.stickers.map((s) => (s.slot > 0 ? `[${s.slot}] ` : '') + s.name).join(', ')
-                          : '—'}
-                      </td>
-                    </tr>
-                    <tr className="net">
-                      <td>Net after 2% fee</td>
-                      <td>{compare.csfloat.net_cents != null ? formatAmount(compare.csfloat.net_cents, 'USD') : '—'}</td>
-                    </tr>
-                    {compare.csfloat.error && (
-                      <tr>
-                        <td colSpan={2} className="muted">
-                          {compare.csfloat.error}
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
+
+            <div className="drawer-body">
+              {!compare ? (
+                <p className="muted">{compareLoading ? 'Fetching live prices…' : 'No price data for this item yet.'}</p>
               ) : (
-                <p className="muted">No CSFloat data synced for this item yet.</p>
+                <>
+                  {compare.bestVenue && compare.deltaPercent != null && (
+                    <p className="verdict">
+                      {compare.bestVenue === 'csfloat'
+                        ? `CSFloat nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than Steam.`
+                        : `Steam nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than CSFloat (before wallet-vs-cash trade-offs).`}
+                    </p>
+                  )}
+                  <div className="compare-cols">
+                    <div className="compare-col">
+                      <h3>Steam ({compare.listed ? 'listed' : 'not listed'})</h3>
+                      <table>
+                        <tbody>
+                          <tr>
+                            <td>Floor (buyer pays)</td>
+                            <td>{compare.steam.lowest_cents != null ? formatAmount(compare.steam.lowest_cents, 'EUR') : '—'}</td>
+                          </tr>
+                          <tr>
+                            <td>Volume 24h</td>
+                            <td>{compare.steam.volume ?? '—'}</td>
+                          </tr>
+                          <tr>
+                            <td>Top buy order</td>
+                            <td>{compare.steam.highest_buy_cents != null ? formatAmount(compare.steam.highest_buy_cents, 'EUR') : '—'}</td>
+                          </tr>
+                          <tr>
+                            <td>Buy order quantity</td>
+                            <td>{compare.steam.buy_count ?? '—'}</td>
+                          </tr>
+                          <tr className="net">
+                            <td>Net after ~15% fee</td>
+                            <td>{compare.steam.net_cents != null ? formatAmount(compare.steam.net_cents, 'EUR') : '—'}</td>
+                          </tr>
+                          {compare.steam.error && (
+                            <tr>
+                              <td colSpan={2} className="muted">
+                                {compare.steam.error}
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="compare-col">
+                      <h3>CSFloat cash-out</h3>
+                      {compare.csfloat ? (
+                        <table>
+                          <tbody>
+                            <tr>
+                              <td>Floor (buyer pays)</td>
+                              <td>{compare.csfloat.lowest_cents != null ? formatAmount(compare.csfloat.lowest_cents, 'USD') : '—'}</td>
+                            </tr>
+                            <tr>
+                              <td>Float ref</td>
+                              <td>{formatFloat(compare.csfloat.float_value)}</td>
+                            </tr>
+                            <tr>
+                              <td>Paint seed</td>
+                              <td>{compare.csfloat.paint_seed ?? '—'}</td>
+                            </tr>
+                            <tr>
+                              <td>Stickers</td>
+                              <td>
+                                {compare.csfloat.stickers?.length
+                                  ? compare.csfloat.stickers.map((s) => (s.slot > 0 ? `[${s.slot}] ` : '') + s.name).join(', ')
+                                  : '—'}
+                              </td>
+                            </tr>
+                            <tr className="net">
+                              <td>Net after 2% fee</td>
+                              <td>{compare.csfloat.net_cents != null ? formatAmount(compare.csfloat.net_cents, 'USD') : '—'}</td>
+                            </tr>
+                            {compare.csfloat.error && (
+                              <tr>
+                                <td colSpan={2} className="muted">
+                                  {compare.csfloat.error}
+                                </td>
+                              </tr>
+                            )}
+                          </tbody>
+                        </table>
+                      ) : (
+                        <p className="muted">No CSFloat data synced for this item yet.</p>
+                      )}
+                    </div>
+                  </div>
+                  <p className="muted footnote">
+                    Steam prices in EUR, CSFloat in USD; nets converted with a fixed rate for comparison. Steam proceeds stay in
+                    your wallet (not cash); CSFloat is a real cash-out.
+                  </p>
+                </>
               )}
             </div>
-          </div>
-          <p className="muted footnote">
-            Steam prices in EUR, CSFloat in USD; nets converted with a fixed rate for comparison. Steam proceeds stay in your
-            wallet (not cash); CSFloat is a real cash-out.
-          </p>
-        </section>
-      )}
 
-      {status?.loggedIn && !!(syncDisplay?.errors.length ?? 0) && (
-        <section className="card sync-errors">
-          <h3>Sync issues</h3>
-          <ul>
-            {(syncDisplay?.errors ?? []).map((e, idx) => (
-              <li key={idx}>{e}</li>
-            ))}
-          </ul>
-        </section>
+            <div className="drawer-sell">
+              <div className="c-status">
+                <span className={`badge ${detail.listing || detail.marketable ? 'ok' : 'muted'}`}>
+                  {detail.listing ? 'listed' : detail.marketable ? 'marketable' : 'restricted'}
+                </span>
+                {detail.listing?.price_cents != null && <span className="mono price">{formatEuro(detail.listing.price_cents)}</span>}
+              </div>
+              <div className="sell-row">
+                <input
+                  placeholder="Sell €"
+                  value={sellPrices[detail.assetid] ?? ''}
+                  onChange={(e) => setSellPrices((prev) => ({ ...prev, [detail.assetid]: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') void doSell(detail)
+                  }}
+                />
+                <button className="btn btn-primary" onClick={() => void doSell(detail)} disabled={!detail.marketable || !!detail.listing}>
+                  Sell
+                </button>
+                {detail.listing && (
+                  <button className="btn btn-ghost" onClick={() => detail.listing && void doCancel(detail.listing.listingid)}>
+                    Cancel
+                  </button>
+                )}
+              </div>
+            </div>
+          </aside>
+        </>
       )}
 
       {status?.loggedIn && (
-        <section className="card grid-card">
+        <section className="workspace">
         <div className="grid-head">
           <div>
             <h2>Inventory</h2>
@@ -993,10 +1047,10 @@ export default function App() {
             </p>
           </div>
           <div className="head-tools">
-            <button className="toggle" onClick={() => setListedOnly((v) => !v)}>
+            <button className="btn btn-ghost" onClick={() => setListedOnly((v) => !v)}>
               {listedOnly ? 'All items' : 'Listed only'}
             </button>
-            <button className="toggle" onClick={() => setGroupByRarity((v) => !v)}>
+            <button className="btn btn-ghost" onClick={() => setGroupByRarity((v) => !v)}>
               {groupByRarity ? 'Flat list' : 'Group by rarity'}
             </button>
           </div>
@@ -1005,39 +1059,50 @@ export default function App() {
           <p className="muted">Nothing sellable yet. Sign in and hit “Sync now” to pull your inventory and market prices.</p>
         )}
         {view?.groups ? (
-          <div className="cards">
-            {view.groups.map((group) => (
-              <Fragment key={group.key}>
-                <div className="group-head">
-                  <span className="group-name">{group.label}</span>
-                  <span className="group-count">{group.items.length}</span>
-                </div>
-                {group.items.map(renderCard)}
-              </Fragment>
-            ))}
-          </div>
+          view.groups.map((group) => (
+            <div className="group" key={group.key}>
+              <div className="group-head">
+                <span className="group-name">{group.label}</span>
+                <span className="group-count">{group.items.length}</span>
+              </div>
+              <div className="cards">{group.items.map(renderCard)}</div>
+            </div>
+          ))
         ) : grid && grid.items.length > 0 ? (
           <div className="cards">{(view?.items ?? grid.items).map(renderCard)}</div>
         ) : null}
       </section>
       )}
 
-      <section className="card log">
-        <h2>Log</h2>
-        {log.length === 0 && <p className="muted">No activity yet.</p>}
-        <ul>
-          {log.map((line, i) => (
-            <li key={i} className={line.kind}>
-              {line.text}
-            </li>
-          ))}
-        </ul>
-      </section>
-
       <footer>
-        build {__BUILD_SHA__}
-        {__BUILD_TIME__ ? ` · ${__BUILD_TIME__}` : ''} · repo {__REPO__}
+        <button className="btn btn-ghost btn-sm" onClick={() => setDockOpen((v) => !v)}>
+          {dockOpen ? 'Hide activity' : 'Show activity'}
+        </button>
+        <span className="build">repo {__REPO__}</span>
       </footer>
+
+      {status?.loggedIn && log.length > 0 && (
+        <aside className={`dock${dockOpen ? '' : ' dock-closed'}`}>
+          <div className="dock-head">
+            <span>Activity</span>
+            <span className="group-count">{log.length}</span>
+            <button
+              className="btn btn-icon"
+              aria-label={dockOpen ? 'Collapse activity' : 'Expand activity'}
+              onClick={() => setDockOpen((v) => !v)}
+            >
+              {dockOpen ? '▾' : '▴'}
+            </button>
+          </div>
+          <ul>
+            {[...log].reverse().map((line, i) => (
+              <li key={i} className={line.kind}>
+                {line.text}
+              </li>
+            ))}
+          </ul>
+        </aside>
+      )}
     </div>
   )
 }
