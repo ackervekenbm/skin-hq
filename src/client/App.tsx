@@ -1,4 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  baseName,
+  eurosToCents,
+  formatAmount,
+  formatAutoSyncMin,
+  formatEuro,
+  formatFloat,
+  formatGridPrice,
+  isStatTrak,
+  parseStickers,
+  relTime,
+  wearOf,
+  type GridPrice,
+  type StickerRef,
+} from './format'
+import { groupByRarity, type RarityGroup } from './grouping'
 
 interface AuthStatus {
   loggedIn: boolean
@@ -12,22 +28,6 @@ type LoginResponse =
   | { loggedIn: true; steamid: string }
   | { needsApproval: true }
   | { needsCode: true; guard: 'email' | 'mobile'; emaildomain?: string }
-
-interface GridPrice {
-  provider: string
-  lowest_cents: number | null
-  median_cents: number | null
-  volume: number | null
-  sell_count: number | null
-  buy_count: number | null
-  highest_buy_cents: number | null
-  float_value: number | null
-  paint_seed: number | null
-  stickers: string | null
-  had_error: number
-  note?: string | null
-  fetched_at: string
-}
 
 interface GridItem {
   assetid: string
@@ -64,11 +64,6 @@ interface GridResponse {
   items: GridItem[]
 }
 
-interface StickerRef {
-  name: string
-  slot: number
-}
-
 interface CompareSide {
   provider: 'steam' | 'csfloat'
   currency: 'EUR' | 'USD'
@@ -103,60 +98,6 @@ interface LogLine {
   text: string
 }
 
-interface RarityGroup {
-  key: string
-  label: string
-  rank: number
-  items: GridItem[]
-}
-
-function formatEuro(cents: number | null | undefined): string {
-  if (cents == null) return '—'
-  return `€${(cents / 100).toFixed(2)}`
-}
-
-function formatAmount(cents: number, currency: 'EUR' | 'USD'): string {
-  return `${currency === 'USD' ? '$' : '€'}${(cents / 100).toFixed(2)}`
-}
-
-function formatGridPrice(p: GridPrice | null | undefined): string {
-  if (!p || p.lowest_cents == null) {
-    // Steam returns a "0,00 €" placeholder for lowest_price when nothing is
-    // actively listed even though the item still trades (median/volume are
-    // real). A successful fetch with no lowest is "no listings", not "no
-    // data" — surface that state instead of a bare dash.
-    return p && p.had_error === 0 ? 'no listings' : '—'
-  }
-  return formatAmount(p.lowest_cents, p.provider === 'csfloat' ? 'USD' : 'EUR')
-}
-
-function formatFloat(f: number | null | undefined): string {
-  if (f == null) return '—'
-  return f.toFixed(4)
-}
-
-function parseStickers(raw: string | null | undefined): StickerRef[] {
-  if (!raw) return []
-  try {
-    const arr = JSON.parse(raw) as StickerRef[]
-    return Array.isArray(arr) ? arr : []
-  } catch {
-    return []
-  }
-}
-
-function relTime(iso: string | null | undefined): string {
-  if (!iso) return '—'
-  const s = Math.max(0, Math.floor((Date.now() - new Date(iso).getTime()) / 1000))
-  if (s < 60) return `${s}s ago`
-  if (s < 3600) return `${Math.floor(s / 60)}m ago`
-  return `${Math.floor(s / 3600)}h ago`
-}
-
-function formatAutoSyncMin(min: number): string {
-  return min % 60 === 0 ? `auto-sync every ${min / 60}h` : `auto-sync every ${min}m`
-}
-
 const THEMES = [
   { id: 'onyx', label: 'Onyx', bg: '#0b0d10', accent: '#b9e233' },
   { id: 'dusk', label: 'Dusk', bg: '#0d0b1a', accent: '#8b7bff' },
@@ -165,26 +106,6 @@ const THEMES = [
 ] as const
 
 type ThemeId = (typeof THEMES)[number]['id']
-
-function wearOf(hash: string): string {
-  const m = hash.match(/\(([^)]+)\)$/)
-  return m ? m[1] : ''
-}
-
-function isStatTrak(name: string, hash: string): boolean {
-  return /^StatTrak/i.test(name) || /^StatTrak/i.test(hash)
-}
-
-function baseName(name: string): string {
-  return name.replace(/^StatTrak\u2122?\s*/i, '').replace(/\s*\([^)]+\)$/, '').trim()
-}
-
-function eurosToCents(input: string): number | null {
-  const text = input.trim().replace(/[€\s]/g, '').replace(',', '.')
-  const amount = Number(text)
-  if (!Number.isFinite(amount) || amount <= 0) return null
-  return Math.round(amount * 100)
-}
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
@@ -203,9 +124,10 @@ export default function App() {
   const [twoFactorCode, setTwoFactorCode] = useState('')
   const [needsCode, setNeedsCode] = useState<'email' | 'mobile' | null>(null)
   const [pendingApproval, setPendingApproval] = useState(false)
+  const [loginError, setLoginError] = useState<string | null>(null)
   const [grid, setGrid] = useState<GridResponse | null>(null)
   const [gridLoading, setGridLoading] = useState(false)
-  const [groupByRarity, setGroupByRarity] = useState(true)
+  const [grouping, setGrouping] = useState(true)
   const [listedOnly, setListedOnly] = useState(false)
   const [sellPrices, setSellPrices] = useState<Record<string, string>>({})
   const [compare, setCompare] = useState<CompareRow | null>(null)
@@ -213,10 +135,16 @@ export default function App() {
   const [detail, setDetail] = useState<GridItem | null>(null)
   const [dockOpen, setDockOpen] = useState(false)
   const [dismissedErrors, setDismissedErrors] = useState<string[]>([])
+  const [sellingIds, setSellingIds] = useState<string[]>([])
   const [settingsOpen, setSettingsOpen] = useState(false)
   const [theme, setTheme] = useState<ThemeId>(() => {
-    const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('skin-hq-theme') : null
-    return (saved as ThemeId | null) ?? 'onyx'
+    let saved: string | null = null
+    try {
+      saved = typeof localStorage !== 'undefined' ? localStorage.getItem('skin-hq-theme') : null
+    } catch {
+      /* storage unavailable — fall back to default */
+    }
+    return THEMES.some((t) => t.id === saved) ? (saved as ThemeId) : 'onyx'
   })
   const [log, setLog] = useState<LogLine[]>([])
   const [syncStatus, setSyncStatus] = useState<SyncStatus | null>(null)
@@ -274,6 +202,7 @@ export default function App() {
   }
 
   async function doLogin() {
+    setLoginError(null)
     try {
       const res = await api<LoginResponse>('/api/auth/login', {
         method: 'POST',
@@ -305,6 +234,7 @@ export default function App() {
       pushLog('ok', `Logged in as ${accountName}`)
     } catch (err) {
       setPendingApproval(false)
+      setLoginError((err as Error).message)
       pushLog('err', `login: ${(err as Error).message}`)
     }
   }
@@ -338,6 +268,7 @@ export default function App() {
   }
 
   async function submitCode() {
+    setLoginError(null)
     try {
       const s = await api<AuthStatus>('/api/auth/guard', {
         method: 'POST',
@@ -350,16 +281,31 @@ export default function App() {
       void kickSyncAfterLogin()
       pushLog('ok', 'Signed in to Steam')
     } catch (err) {
+      setLoginError((err as Error).message)
       pushLog('err', `code: ${(err as Error).message}`)
     }
   }
 
-  async function doLogout() {
-    await api('/api/auth/logout', { method: 'POST' })
+  async function doLogout(): Promise<boolean> {
+    try {
+      await api('/api/auth/logout', { method: 'POST' })
+    } catch (err) {
+      pushLog('err', `logout: ${(err as Error).message}`)
+      return false
+    }
     setStatus({ loggedIn: false, steamid: null })
     setNeedsCode(null)
     setPendingApproval(false)
+    setPassword('')
+    setTwoFactorCode('')
+    setLoginError(null)
+    setGrid(null)
+    setDetail(null)
+    setCompare(null)
+    setDismissedErrors([])
+    setSellingIds([])
     pushLog('ok', 'Logged out')
+    return true
   }
 
   const refreshGrid = useCallback(async () => {
@@ -520,11 +466,13 @@ export default function App() {
   }, [status?.loggedIn, syncWatching, loadGrid, refreshGrid, pushLog])
 
   async function doSell(item: GridItem) {
+    if (!item.marketable || !!item.listing || sellingIds.includes(item.assetid)) return
     const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
     if (priceCents == null) {
       pushLog('err', `sell ${item.name}: enter a positive price in euros (e.g. 12,50)`)
       return
     }
+    setSellingIds((prev) => [...prev, item.assetid])
     try {
       const r = await api<{ success: boolean; needs_mobile_confirmation: boolean; message?: string }>('/api/sell', {
         method: 'POST',
@@ -534,6 +482,8 @@ export default function App() {
       pushLog(r.success ? 'ok' : 'err', `sell ${item.name} @ ${formatEuro(priceCents)}: ${state}${r.message ? ` (${r.message})` : ''}`)
     } catch (err) {
       pushLog('err', `sell ${item.name}: ${(err as Error).message}`)
+    } finally {
+      setSellingIds((prev) => prev.filter((id) => id !== item.assetid))
     }
   }
 
@@ -782,6 +732,7 @@ export default function App() {
   }
 
   const renderDetailModal = (item: GridItem) => {
+    const current = grid?.items.find((i) => i.assetid === item.assetid) ?? item
     const wear = wearOf(item.market_hash_name)
     const st = isStatTrak(item.name, item.market_hash_name)
     const isCharm = /^charm \|/i.test(item.name) || /^charm \|/i.test(item.market_hash_name)
@@ -924,25 +875,32 @@ export default function App() {
 
         <div className="modal-sell">
           <div className="c-status">
-            <span className={`badge ${item.listing || item.marketable ? 'ok' : 'muted'}`}>
-              {item.listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
+            <span className={`badge ${current.listing || current.marketable ? 'ok' : 'muted'}`}>
+              {current.listing ? 'listed' : current.marketable ? 'marketable' : 'restricted'}
             </span>
-            {item.listing?.price_cents != null && <span className="mono price">{formatEuro(item.listing.price_cents)}</span>}
+            {current.listing?.price_cents != null && <span className="mono price">{formatEuro(current.listing.price_cents)}</span>}
           </div>
           <div className="sell-row">
             <input
               placeholder="Sell €"
-              value={sellPrices[item.assetid] ?? ''}
-              onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
+              value={sellPrices[current.assetid] ?? ''}
+              onChange={(e) => setSellPrices((prev) => ({ ...prev, [current.assetid]: e.target.value }))}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void doSell(item)
+                if (e.key === 'Enter') void doSell(current)
               }}
+              disabled={!current.marketable || !!current.listing || sellingIds.includes(current.assetid)}
+              inputMode="decimal"
+              autoComplete="off"
             />
-            <button className="btn btn-primary" onClick={() => void doSell(item)} disabled={!item.marketable || !!item.listing}>
-              Sell
+            <button
+              className="btn btn-primary"
+              onClick={() => void doSell(current)}
+              disabled={!current.marketable || !!current.listing || sellingIds.includes(current.assetid)}
+            >
+              {sellingIds.includes(current.assetid) ? 'Selling…' : 'Sell'}
             </button>
-            {item.listing && (
-              <button className="btn btn-ghost" onClick={() => item.listing && void doCancel(item.listing.listingid)}>
+            {current.listing && (
+              <button className="btn btn-ghost" onClick={() => current.listing && void doCancel(current.listing.listingid)}>
                 Cancel
               </button>
             )}
@@ -952,27 +910,12 @@ export default function App() {
     )
   }
 
-  const view = useMemo<{ groups: RarityGroup[] | null; items: GridItem[] | null }>(() => {
+  const view = useMemo<{ groups: RarityGroup<GridItem>[] | null; items: GridItem[] | null }>(() => {
     if (!grid) return { groups: null, items: null }
     const items = listedOnly ? grid.items.filter((i) => i.listing) : grid.items
-    if (!groupByRarity) return { groups: null, items }
-    const groups = new Map<string, GridItem[]>()
-    for (const item of items) {
-      const key = item.rarity?.internal_name ?? 'unranked'
-      const arr = groups.get(key) ?? []
-      arr.push(item)
-      groups.set(key, arr)
-    }
-    const sorted: RarityGroup[] = Array.from(groups.entries())
-      .map(([key, gitems]) => ({
-        key,
-        label: gitems[0]?.rarity?.name ?? 'Other',
-        rank: gitems[0]?.rarity?.rank ?? 99,
-        items: gitems,
-      }))
-      .sort((a, b) => a.rank - b.rank)
-    return { groups: sorted, items: null }
-  }, [grid, groupByRarity, listedOnly])
+    if (!grouping) return { groups: null, items }
+    return { groups: groupByRarity(items), items: null }
+  }, [grid, grouping, listedOnly])
 
   useEffect(() => {
     // Logged-out = no inventory view at all: every inventory-related section is
@@ -1023,8 +966,24 @@ export default function App() {
         <section className="card signin">
           <h2>Sign in to Steam</h2>
           {status.session?.state === 'dead' && <p className="hint hint-err">Steam session expired — sign in again.</p>}
-          <input placeholder="Steam account name" value={accountName} onChange={(e) => setAccountName(e.target.value)} />
-          <input placeholder="Password" type="password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          {loginError && <p className="hint hint-err">{loginError}</p>}
+          <input
+            placeholder="Steam account name"
+            value={accountName}
+            onChange={(e) => {
+              setAccountName(e.target.value)
+              setLoginError(null)
+            }}
+          />
+          <input
+            placeholder="Password"
+            type="password"
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value)
+              setLoginError(null)
+            }}
+          />
           {needsCode != null ? (
             <>
               <p className="hint">
@@ -1032,7 +991,14 @@ export default function App() {
                   ? 'Steam sent a guard code to your email — enter it below.'
                   : 'Enter the current Steam Guard code from the Steam Mobile app.'}
               </p>
-              <input placeholder="Steam Guard code" value={twoFactorCode} onChange={(e) => setTwoFactorCode(e.target.value)} />
+              <input
+                placeholder="Steam Guard code"
+                value={twoFactorCode}
+                onChange={(e) => {
+                  setTwoFactorCode(e.target.value)
+                  setLoginError(null)
+                }}
+              />
               <button className="btn btn-primary" onClick={() => void submitCode()} disabled={!twoFactorCode.trim()}>
                 Sign in with code
               </button>
@@ -1121,8 +1087,8 @@ export default function App() {
             <button className="btn btn-ghost" onClick={() => setListedOnly((v) => !v)}>
               {listedOnly ? 'All items' : 'Listed only'}
             </button>
-            <button className="btn btn-ghost" onClick={() => setGroupByRarity((v) => !v)}>
-              {groupByRarity ? 'Flat list' : 'Group by rarity'}
+            <button className="btn btn-ghost" onClick={() => setGrouping((v) => !v)}>
+              {grouping ? 'Flat list' : 'Group by rarity'}
             </button>
           </div>
         </div>
@@ -1151,7 +1117,7 @@ export default function App() {
         </button>
       </footer>
 
-      {status?.loggedIn && log.length > 0 && (
+      {log.length > 0 && (
         <aside className={`dock${dockOpen ? '' : ' dock-closed'}`}>
           <div className="dock-head">
             <span>Activity</span>
@@ -1195,7 +1161,7 @@ export default function App() {
                     {status.accountName ?? 'Signed in'}
                     {status.steamid ? ` · ${status.steamid}` : ''}
                   </span>
-                  <button className="btn btn-ghost" onClick={() => void doLogout().finally(() => setSettingsOpen(false))}>
+                  <button className="btn btn-ghost" onClick={() => void doLogout().then((ok) => { if (ok) setSettingsOpen(false) })}>
                     Log out
                   </button>
                 </div>

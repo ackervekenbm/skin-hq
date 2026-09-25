@@ -14,7 +14,7 @@
   --muted: #8791ab;
   --accent: #5b8cff;
   --accent-strong: #7aa5ff;
-  --on-accent: #ffffff;
+  --on-accent: #080d1b;
   --ok: #43d39a;
   --warn: #e8c668;
   --err: #ff6d6d;
@@ -30,6 +30,8 @@
   --own-float: #7bb7ff;
   --radius: 12px;
   --shadow: 0 12px 32px rgba(3, 6, 16, 0.45);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, Menlo, monospace;
+  --appbar-h: 56px;
 }
 
 :root[data-theme="onyx"] {
@@ -58,6 +60,8 @@
   --own-float: #93c5fd;
   --radius: 10px;
   --shadow: 0 14px 34px rgba(0, 0, 0, 0.55);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, Menlo, monospace;
+  --appbar-h: 56px;
 }
 
 :root[data-theme="dusk"] {
@@ -70,7 +74,7 @@
   --muted: #9188b8;
   --accent: #8b7bff;
   --accent-strong: #a79bff;
-  --on-accent: #ffffff;
+  --on-accent: #100c25;
   --ok: #41d9a4;
   --warn: #e9c878;
   --err: #ff7878;
@@ -86,6 +90,8 @@
   --own-float: #a5b4fc;
   --radius: 14px;
   --shadow: 0 16px 36px rgba(5, 3, 14, 0.55);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, Menlo, monospace;
+  --appbar-h: 56px;
 }
 
 :root[data-theme="ember"] {
@@ -114,6 +120,8 @@
   --own-float: #f0c082;
   --radius: 12px;
   --shadow: 0 14px 34px rgba(8, 4, 1, 0.55);
+  --mono: ui-monospace, "SF Mono", "Cascadia Mono", "Segoe UI Mono", Consolas, Menlo, monospace;
+  --appbar-h: 56px;
 }
 
 * {
@@ -383,6 +391,7 @@ input::placeholder {
 .chip-warn {
   color: var(--warn);
   border-color: color-mix(in srgb, var(--warn) 50%, transparent);
+  white-space: normal;
 }
 
 .toasts {
@@ -831,6 +840,7 @@ input::placeholder {
 }
 
 .modal-panel {
+  position: relative;
   width: min(720px, 100%);
   max-height: 92vh;
   overflow-y: auto;
@@ -883,6 +893,7 @@ input::placeholder {
 .detail-title {
   flex: 1;
   min-width: 0;
+  padding-right: 28px;
 }
 
 .detail-title h2 {
@@ -910,6 +921,11 @@ input::placeholder {
 }
 
 .modal-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  width: 32px;
+  height: 32px;
   flex-shrink: 0;
 }
 
@@ -1139,12 +1155,16 @@ input::placeholder {
   font-size: 13px;
 }
 
-/* ── Compare (inside the drawer) ─────────────────────────── */
+/* ── Compare (inside the detail modal) ───────────────────── */
 
 .compare-cols {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 14px;
+}
+
+.compare-col {
+  min-width: 0;
 }
 
 .compare-col h3 {
@@ -1166,6 +1186,7 @@ input::placeholder {
   padding: 4px 6px;
   border-bottom: 1px dashed var(--border);
   vertical-align: top;
+  overflow-wrap: anywhere;
 }
 
 .compare-col td:first-child {
@@ -1308,8 +1329,35 @@ footer {
     flex: 1 1 100%;
   }
 
+  /* Attached charm/keychain sub-rows carry two 150px-min price sections;
+     a single-column grid keeps them from overflowing a narrow card. */
+  .sub-body,
+  .sub-body--narrow {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
   .compare-cols {
     grid-template-columns: 1fr;
+  }
+
+  .detail-head {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .detail-img {
+    width: 140px;
+    height: 104px;
+  }
+
+  .detail-meta {
+    justify-content: center;
+  }
+
+  .modal-panel {
+    padding: 18px;
   }
 
   .acct {
