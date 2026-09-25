@@ -474,8 +474,6 @@ export default function App() {
 
   const syncDisplay = syncStatus ?? grid?.sync ?? null
 
-  const visibleErrors = (syncDisplay?.errors ?? []).filter((e) => !dismissedErrors.includes(e))
-
   // Auto-sync visibility: the server runs scheduled syncs this tab didn't
   // start. Poll /api/sync/status and surface progress + refresh the grid when
   // an un-watched run finishes, so "prices synced" timestamps move on their
@@ -779,6 +777,177 @@ export default function App() {
     )
   }
 
+  const renderDetailModal = (item: GridItem) => {
+    const wear = wearOf(item.market_hash_name)
+    const st = isStatTrak(item.name, item.market_hash_name)
+    const isCharm = /^charm \|/i.test(item.name) || /^charm \|/i.test(item.market_hash_name)
+    const idParts: string[] = []
+    if (!isCharm) {
+      if (item.own?.float_value != null) idParts.push(`Float ${formatFloat(item.own.float_value)}`)
+      if (item.own?.paint_seed != null) idParts.push(`Seed ${item.own.paint_seed}`)
+    }
+    let stickerCount = 0
+    try {
+      const own = item.own?.stickers ? (JSON.parse(item.own.stickers) as { stickers?: unknown[] }) : null
+      if (own && Array.isArray(own.stickers)) stickerCount = own.stickers.length
+    } catch {
+      /* ignore malformed sticker payloads */
+    }
+    if (stickerCount === 0) stickerCount = parseStickers(item.prices.csfloat?.stickers).length
+    return (
+      <div className="modal-panel" role="dialog" aria-modal="true" aria-label={item.name} onClick={(e) => e.stopPropagation()}>
+        <div className="detail-head">
+          <div className="detail-img">
+            <img src={marketIcon(item)} alt="" loading="lazy" />
+          </div>
+          <div className="detail-title">
+            <h2>{item.name}</h2>
+            <div className="detail-meta">
+              {wear && <span className="wear-badge">{wear}</span>}
+              {st && <span className="stat-badge">StatTrak</span>}
+              {item.rarity?.name && <span className="badge">{item.rarity.name}</span>}
+            </div>
+            <p className="muted mono">{item.market_hash_name}</p>
+            {(idParts.length > 0 || stickerCount > 0) && (
+              <p className="muted detail-id">
+                {idParts.join(' · ')}
+                {stickerCount > 0 && `${idParts.length > 0 ? ' · ' : ''}${stickerCount} sticker${stickerCount > 1 ? 's' : ''} attached`}
+              </p>
+            )}
+          </div>
+          <button className="btn btn-icon modal-close" aria-label="Close" onClick={closeDetail}>
+            ×
+          </button>
+        </div>
+
+        <div className="detail-body">
+          {!compare ? (
+            <p className="muted">{compareLoading ? 'Fetching live prices…' : 'No live price data for this item yet.'}</p>
+          ) : (
+            <>
+              {compare.bestVenue && compare.deltaPercent != null && (
+                <p className="verdict">
+                  {compare.bestVenue === 'csfloat'
+                    ? `CSFloat nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than Steam.`
+                    : `Steam nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than CSFloat (before wallet-vs-cash trade-offs).`}
+                </p>
+              )}
+              <div className="compare-cols">
+                <div className="compare-col">
+                  <h3>Steam ({compare.listed ? 'listed' : 'not listed'})</h3>
+                  <table>
+                    <tbody>
+                      <tr>
+                        <td>Floor (buyer pays)</td>
+                        <td>{compare.steam.lowest_cents != null ? formatAmount(compare.steam.lowest_cents, 'EUR') : '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Volume 24h</td>
+                        <td>{compare.steam.volume ?? '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Top buy order</td>
+                        <td>{compare.steam.highest_buy_cents != null ? formatAmount(compare.steam.highest_buy_cents, 'EUR') : '—'}</td>
+                      </tr>
+                      <tr>
+                        <td>Buy order quantity</td>
+                        <td>{compare.steam.buy_count ?? '—'}</td>
+                      </tr>
+                      <tr className="net">
+                        <td>Net after ~15% fee</td>
+                        <td>{compare.steam.net_cents != null ? formatAmount(compare.steam.net_cents, 'EUR') : '—'}</td>
+                      </tr>
+                      {compare.steam.error && (
+                        <tr>
+                          <td colSpan={2} className="muted">
+                            {compare.steam.error}
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="compare-col">
+                  <h3>CSFloat cash-out</h3>
+                  {compare.csfloat ? (
+                    <table>
+                      <tbody>
+                        <tr>
+                          <td>Floor (buyer pays)</td>
+                          <td>{compare.csfloat.lowest_cents != null ? formatAmount(compare.csfloat.lowest_cents, 'USD') : '—'}</td>
+                        </tr>
+                        <tr>
+                          <td>Float ref</td>
+                          <td>{formatFloat(compare.csfloat.float_value)}</td>
+                        </tr>
+                        <tr>
+                          <td>Paint seed</td>
+                          <td>{compare.csfloat.paint_seed ?? '—'}</td>
+                        </tr>
+                        <tr>
+                          <td>Stickers</td>
+                          <td>
+                            {compare.csfloat.stickers?.length
+                              ? compare.csfloat.stickers.map((s) => (s.slot > 0 ? `[${s.slot}] ` : '') + s.name).join(', ')
+                              : '—'}
+                          </td>
+                        </tr>
+                        <tr className="net">
+                          <td>Net after 2% fee</td>
+                          <td>{compare.csfloat.net_cents != null ? formatAmount(compare.csfloat.net_cents, 'USD') : '—'}</td>
+                        </tr>
+                        {compare.csfloat.error && (
+                          <tr>
+                            <td colSpan={2} className="muted">
+                              {compare.csfloat.error}
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  ) : (
+                    <p className="muted">No CSFloat data synced for this item yet.</p>
+                  )}
+                </div>
+              </div>
+              <p className="muted footnote">
+                Steam prices in EUR, CSFloat in USD; nets converted with a fixed rate for comparison. Steam proceeds stay in your
+                wallet (not cash); CSFloat is a real cash-out.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="modal-sell">
+          <div className="c-status">
+            <span className={`badge ${item.listing || item.marketable ? 'ok' : 'muted'}`}>
+              {item.listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
+            </span>
+            {item.listing?.price_cents != null && <span className="mono price">{formatEuro(item.listing.price_cents)}</span>}
+          </div>
+          <div className="sell-row">
+            <input
+              placeholder="Sell €"
+              value={sellPrices[item.assetid] ?? ''}
+              onChange={(e) => setSellPrices((prev) => ({ ...prev, [item.assetid]: e.target.value }))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') void doSell(item)
+              }}
+            />
+            <button className="btn btn-primary" onClick={() => void doSell(item)} disabled={!item.marketable || !!item.listing}>
+              Sell
+            </button>
+            {item.listing && (
+              <button className="btn btn-ghost" onClick={() => item.listing && void doCancel(item.listing.listingid)}>
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   const view = useMemo<{ groups: RarityGroup[] | null; items: GridItem[] | null }>(() => {
     if (!grid) return { groups: null, items: null }
     const items = listedOnly ? grid.items.filter((i) => i.listing) : grid.items
@@ -902,163 +1071,34 @@ export default function App() {
           {status?.session?.state === 'throttled' && (
             <span className="chip chip-warn">Steam rate-limiting this session — sync may be delayed.</span>
           )}
-          {visibleErrors.length > 0 && (
-            <span className="chip chip-err">
-              <button className="chip-act" onClick={() => setDockOpen(true)}>
-                {visibleErrors.length} sync issue{visibleErrors.length > 1 ? 's' : ''}
-              </button>
-              <button
-                className="btn btn-icon chip-dismiss"
-                aria-label="Dismiss sync issues"
-                onClick={() => setDismissedErrors((prev) => [...prev, ...visibleErrors])}
-              >
-                ×
-              </button>
-            </span>
-          )}
         </section>
+      )}
+
+      {status?.loggedIn && (syncDisplay?.errors ?? []).some((e) => !dismissedErrors.includes(e)) && (
+        <div className="toasts">
+          {(syncDisplay?.errors ?? [])
+            .filter((e) => !dismissedErrors.includes(e))
+            .map((e, idx) => (
+              <div className="toast" key={idx}>
+                <span>{e}</span>
+                <button
+                  className="btn btn-icon"
+                  aria-label="Dismiss"
+                  onClick={() => setDismissedErrors((prev) => [...prev, e])}
+                >
+                  ×
+                </button>
+              </div>
+            ))}
+        </div>
       )}
 
       {status?.loggedIn && detail && (
         <>
           <div className="scrim" onClick={closeDetail} />
-          <aside className="drawer">
-            <div className="drawer-head">
-              <div className="drawer-title">
-                <h2>{baseName(detail.name)}</h2>
-                {isStatTrak(detail.name, detail.market_hash_name) && <span className="stat-badge">StatTrak</span>}
-                <p className="muted mono">{detail.market_hash_name}</p>
-              </div>
-              <button className="btn btn-ghost" onClick={closeDetail}>
-                Close
-              </button>
-            </div>
-
-            <div className="drawer-body">
-              {!compare ? (
-                <p className="muted">{compareLoading ? 'Fetching live prices…' : 'No price data for this item yet.'}</p>
-              ) : (
-                <>
-                  {compare.bestVenue && compare.deltaPercent != null && (
-                    <p className="verdict">
-                      {compare.bestVenue === 'csfloat'
-                        ? `CSFloat nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than Steam.`
-                        : `Steam nets ${Math.abs(compare.deltaPercent).toFixed(1)}% more than CSFloat (before wallet-vs-cash trade-offs).`}
-                    </p>
-                  )}
-                  <div className="compare-cols">
-                    <div className="compare-col">
-                      <h3>Steam ({compare.listed ? 'listed' : 'not listed'})</h3>
-                      <table>
-                        <tbody>
-                          <tr>
-                            <td>Floor (buyer pays)</td>
-                            <td>{compare.steam.lowest_cents != null ? formatAmount(compare.steam.lowest_cents, 'EUR') : '—'}</td>
-                          </tr>
-                          <tr>
-                            <td>Volume 24h</td>
-                            <td>{compare.steam.volume ?? '—'}</td>
-                          </tr>
-                          <tr>
-                            <td>Top buy order</td>
-                            <td>{compare.steam.highest_buy_cents != null ? formatAmount(compare.steam.highest_buy_cents, 'EUR') : '—'}</td>
-                          </tr>
-                          <tr>
-                            <td>Buy order quantity</td>
-                            <td>{compare.steam.buy_count ?? '—'}</td>
-                          </tr>
-                          <tr className="net">
-                            <td>Net after ~15% fee</td>
-                            <td>{compare.steam.net_cents != null ? formatAmount(compare.steam.net_cents, 'EUR') : '—'}</td>
-                          </tr>
-                          {compare.steam.error && (
-                            <tr>
-                              <td colSpan={2} className="muted">
-                                {compare.steam.error}
-                              </td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                    <div className="compare-col">
-                      <h3>CSFloat cash-out</h3>
-                      {compare.csfloat ? (
-                        <table>
-                          <tbody>
-                            <tr>
-                              <td>Floor (buyer pays)</td>
-                              <td>{compare.csfloat.lowest_cents != null ? formatAmount(compare.csfloat.lowest_cents, 'USD') : '—'}</td>
-                            </tr>
-                            <tr>
-                              <td>Float ref</td>
-                              <td>{formatFloat(compare.csfloat.float_value)}</td>
-                            </tr>
-                            <tr>
-                              <td>Paint seed</td>
-                              <td>{compare.csfloat.paint_seed ?? '—'}</td>
-                            </tr>
-                            <tr>
-                              <td>Stickers</td>
-                              <td>
-                                {compare.csfloat.stickers?.length
-                                  ? compare.csfloat.stickers.map((s) => (s.slot > 0 ? `[${s.slot}] ` : '') + s.name).join(', ')
-                                  : '—'}
-                              </td>
-                            </tr>
-                            <tr className="net">
-                              <td>Net after 2% fee</td>
-                              <td>{compare.csfloat.net_cents != null ? formatAmount(compare.csfloat.net_cents, 'USD') : '—'}</td>
-                            </tr>
-                            {compare.csfloat.error && (
-                              <tr>
-                                <td colSpan={2} className="muted">
-                                  {compare.csfloat.error}
-                                </td>
-                              </tr>
-                            )}
-                          </tbody>
-                        </table>
-                      ) : (
-                        <p className="muted">No CSFloat data synced for this item yet.</p>
-                      )}
-                    </div>
-                  </div>
-                  <p className="muted footnote">
-                    Steam prices in EUR, CSFloat in USD; nets converted with a fixed rate for comparison. Steam proceeds stay in
-                    your wallet (not cash); CSFloat is a real cash-out.
-                  </p>
-                </>
-              )}
-            </div>
-
-            <div className="drawer-sell">
-              <div className="c-status">
-                <span className={`badge ${detail.listing || detail.marketable ? 'ok' : 'muted'}`}>
-                  {detail.listing ? 'listed' : detail.marketable ? 'marketable' : 'restricted'}
-                </span>
-                {detail.listing?.price_cents != null && <span className="mono price">{formatEuro(detail.listing.price_cents)}</span>}
-              </div>
-              <div className="sell-row">
-                <input
-                  placeholder="Sell €"
-                  value={sellPrices[detail.assetid] ?? ''}
-                  onChange={(e) => setSellPrices((prev) => ({ ...prev, [detail.assetid]: e.target.value }))}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') void doSell(detail)
-                  }}
-                />
-                <button className="btn btn-primary" onClick={() => void doSell(detail)} disabled={!detail.marketable || !!detail.listing}>
-                  Sell
-                </button>
-                {detail.listing && (
-                  <button className="btn btn-ghost" onClick={() => detail.listing && void doCancel(detail.listing.listingid)}>
-                    Cancel
-                  </button>
-                )}
-              </div>
-            </div>
-          </aside>
+          <div className="modal" onClick={closeDetail}>
+            {renderDetailModal(detail)}
+          </div>
         </>
       )}
 
