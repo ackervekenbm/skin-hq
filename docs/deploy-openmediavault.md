@@ -37,6 +37,7 @@ Create `.env` next to `docker-compose.yml`:
 cat > .env <<EOF
 SKINHQ_SESSION_KEY=<the hex from above>
 CSFLOAT_API_KEY=<optional, csfloat.com/api key>
+# SYNC_INTERVAL_MIN=<minutes between auto-syncs, 0 disables, default 60>
 EOF
 chmod 600 .env
 ```
@@ -44,7 +45,10 @@ chmod 600 .env
 > `SKINHQ_SESSION_KEY` encrypts the Steam session cookies at rest. If you
 > lose it, the stored session can't be decrypted and you'll just sign in
 > again (no data loss beyond that). `CSFLOAT_API_KEY` is optional — without
-> it the CSFloat price column stays empty.
+> it the CSFloat price column stays empty. `SYNC_INTERVAL_MIN` (optional,
+> default `60`) schedules an automatic sync of inventory, listings, and
+> stale prices every N minutes — set `0` to disable and rely on "Sync now"
+> alone.
 
 Copy the deploy compose file from the repo root:
 
