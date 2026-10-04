@@ -3,9 +3,9 @@ import {
   latestPriceSnapshots,
   listItems,
   listMyListings,
-  replaceMyListings,
   type PriceSnapshotRow,
 } from './db'
+import { pendingByAssetId, refreshListings } from './listings'
 import type { ItemPrice } from './price'
 import { providers } from './price'
 import * as steam from './steam'
@@ -35,12 +35,20 @@ export interface GridItem {
   own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, PriceSnapshotRow>
   listing: { listingid: string; price_cents: number | null } | null
+  pending: PendingView | null
   pricesSyncedAt: string | null
+}
+
+// A sell Steam accepted but has not turned into a listing yet. See listings.ts.
+export interface PendingView {
+  state: 'awaiting' | 'declined'
+  price_cents: number | null
+  created_at: string
 }
 
 export interface GridResponse {
   refreshedAt: string | null
-  counts: { inventory: number; marketable: number; listed: number }
+  counts: { inventory: number; marketable: number; listed: number; pending: number }
   sync: SyncStatus
   items: GridItem[]
 }
@@ -243,33 +251,25 @@ class SyncEngine {
     this.phase = 'listings'
     this.current = 1
     this.total = 1
-    try {
-      const { listings } = await steam.getMyListings()
-      const previous = listMyListings().length
-      if (listings.length === 0 && previous > 0) {
-        // Steam can transiently return "no listings" (HTTP 400 / empty body)
-        // while real listings still exist — never let that wipe the table.
-        this.pushError('listings: Steam returned no listings but we previously had some — kept previous data')
-        console.warn('[sync] listings came back empty while we had rows; keeping previous data')
-        return
-      }
-      replaceMyListings(
-        listings.map((l) => ({
-          listingid: l.listingid,
-          assetid: l.assetid ?? '',
-          market_hash_name: l.market_hash_name ?? l.name ?? '',
-          price_cents: l.price_cents ?? null,
-          updated_at: new Date().toISOString(),
-        })),
-      )
-      this.last.listings = new Date().toISOString()
-      console.info(`[sync] listings: ${listings.length} active`)
-    } catch (err) {
-      this.last.listings = null
-      this.pushError(`listings: ${(err as Error).message}`)
-      console.warn('[sync] listings failed', (err as Error).message)
-      void steam.probeSessionNow()
+    // Shared with the post-sell/post-cancel reconciles in listings.ts, so a
+    // scheduled sync can never race a live reconcile onto Steam's market
+    // endpoint — and both clear the same pending sells.
+    const res = await refreshListings()
+    if (!res.ok) {
+      if (res.keptPrevious) this.pushError(`listings: ${res.error}`)
+      // A hard failure here usually means the session was silently rejected;
+      // reclassify so the running sync aborts downstream.
+      if (res.suspectSession) void steam.probeSessionNow()
+      // Only blank the timestamp when we actually lost the cached data. When the
+      // previous listings were kept, the last successful sync still stands —
+      // nulling it would make the UI claim "never synced" and trigger a needless
+      // full re-sync on top of an already degraded run.
+      if (!res.keptPrevious) this.last.listings = null
+      console.warn('[sync] listings failed', res.error)
+      return
     }
+    this.last.listings = new Date().toISOString()
+    console.info(`[sync] listings: ${res.total} active`)
   }
 
   private async syncPrices(): Promise<void> {
@@ -413,24 +413,67 @@ async function autoSyncTick(): Promise<boolean> {
   return ok
 }
 
+type ListingRef = { listingid: string; price_cents: number | null }
+type ListingRow = { listingid: string; assetid: string | null; market_hash_name: string | null; price_cents: number | null }
+
+// Pair each owned item with its active listing.
+//
+// assetid is the exact key and is what Steam returns for every listing we
+// created, so it is the only join that is safe on an inventory full of duplicate
+// market hash names ("Charm | Lil' SAS" x6, "USP-S | Ticket to Hell" x5).
+//
+// hash is the fallback for orphaned rows whose assetid went stale — but only
+// when we own exactly one copy of that item. With six identical charms there is
+// no way to tell which one the orphan refers to, and guessing wrong is how the
+// grid used to end up claiming all six were listed (or cancelling the wrong one).
+// `duplicateHashes` counts the copies of each hash we own so the fallback can
+// refuse to guess.
+export function makeListingLookup(
+  rows: Array<ListingRow>,
+  duplicateHashes: ReadonlyMap<string, number> = new Map(),
+): (assetid: string, hash: string) => ListingRef | null {
+  const byAsset = new Map<string, ListingRef>()
+  const byHash = new Map<string, ListingRef>()
+  // Cheapest wins when several listings share a hash: that is the one a buyer
+  // would actually beat, so it is the honest stand-in for "listed".
+  const priceAsc = (a: ListingRef, b: ListingRef): number => (a.price_cents ?? Infinity) - (b.price_cents ?? Infinity)
+  for (const l of [...rows].sort(priceAsc)) {
+    const ref: ListingRef = { listingid: l.listingid, price_cents: l.price_cents }
+    if (l.assetid && !byAsset.has(l.assetid)) byAsset.set(l.assetid, ref)
+    if (l.market_hash_name && !byHash.has(l.market_hash_name)) byHash.set(l.market_hash_name, ref)
+  }
+  return (assetid, hash) => {
+    const exact = byAsset.get(assetid)
+    if (exact) return exact
+    if (!hash || (duplicateHashes.get(hash) ?? 0) > 1) return null
+    return byHash.get(hash) ?? null
+  }
+}
+
 export function buildGrid(): GridResponse {
   const { byItem, latestAt } = latestPriceSnapshots()
-  // Active listings are matched by market hash name: listing assetids can go
-  // stale (orphaned listings), so an exact assetid join would miss them.
   const listings = listMyListings()
-  const byHash = new Map<string, { listingid: string; price_cents: number | null }>()
-  for (const l of listings.sort((a, b) => (a.price_cents ?? Infinity) - (b.price_cents ?? Infinity))) {
-    if (l.market_hash_name && !byHash.has(l.market_hash_name)) {
-      byHash.set(l.market_hash_name, { listingid: l.listingid, price_cents: l.price_cents })
-    }
-  }
-
   const all = listItems()
+
+  // How many copies of each market item we own. Hashes we hold more than once
+  // can no longer be matched by name, only by assetid.
+  const copies = new Map<string, number>()
+  for (const i of all) copies.set(i.market_hash_name, (copies.get(i.market_hash_name) ?? 0) + 1)
+  const duplicateHashes = new Map([...copies].filter(([, n]) => n > 1))
+  const listingFor = makeListingLookup(listings, duplicateHashes)
+  const pendingById = pendingByAssetId()
   // Steam reports marketable=0 for items that left the active inventory
   // context (context 16 — currently listed/on-market items), even though they
   // are sellable. An item with an active listing is by definition saleable, so
   // treat that as marketable.
-  const marketable = all.filter((i) => i.marketable === 1 || byHash.has(i.market_hash_name))
+  //
+  // A pending sell also keeps its item visible, for the same reason: Steam drops
+  // the asset out of the sellable context the moment it accepts the request, so
+  // a pending-only item would otherwise disappear from the grid exactly when the
+  // user most needs to see that it is in flight.
+  const keepVisible = (i: (typeof all)[number]): boolean =>
+    i.marketable === 1 || listingFor(i.assetid, i.market_hash_name) != null || pendingById.has(i.assetid)
+  const marketable = all.filter(keepVisible)
 
   const items: GridItem[] = marketable
     .map((i) => {
@@ -440,7 +483,15 @@ export function buildGrid(): GridResponse {
       } catch {
         /* ignore legacy rows */
       }
-      const listing = byHash.get(i.market_hash_name)
+      const listing = listingFor(i.assetid, i.market_hash_name)
+      // A pending sell only shows while the item is genuinely not listed. If a
+      // listing does exist (matched by hash, say) that is the stronger fact and
+      // the item is already shown as listed.
+      const pendingRow = pendingById.get(i.assetid)
+      const pending: PendingView | null =
+        listing || !pendingRow
+          ? null
+          : { state: pendingRow.state, price_cents: pendingRow.price_cents, created_at: pendingRow.created_at }
       // All providers for a hash are snapshotted in the same pass, so the
       // latest fetched_at across them is "the moment this item's prices were
       // synced" (steam, CSFloat, ... together).
@@ -463,6 +514,7 @@ export function buildGrid(): GridResponse {
             : null,
         prices: Object.fromEntries(byItem.get(i.market_hash_name) ?? []),
         listing: listing ? { listingid: listing.listingid, price_cents: listing.price_cents } : null,
+        pending,
         pricesSyncedAt,
       }
     })
@@ -473,7 +525,12 @@ export function buildGrid(): GridResponse {
 
   return {
     refreshedAt: latestAt,
-    counts: { inventory: all.length, marketable: marketable.length, listed: listings.length },
+    counts: {
+      inventory: all.length,
+      marketable: marketable.length,
+      listed: listings.length,
+      pending: items.filter((i) => i.pending != null).length,
+    },
     sync: sync.status(),
     items,
   }

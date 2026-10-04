@@ -5,6 +5,7 @@ import './db'
 import * as steam from './steam'
 import { comparePrices } from './price'
 import { listItems } from './db'
+import { clearPendingSell, forgetListing, markPendingSell, refreshListings } from './listings'
 import { buildGrid, startAutoSync, sync } from './sync'
 import { buildCompare } from './compare'
 
@@ -138,11 +139,32 @@ app.post('/api/sell', async (req, res) => {
     res.status(400).json({ error: 'assetid and price (in cents) are required' })
     return
   }
+  // A retried sell supersedes any earlier attempt for the same asset, so drop
+  // the stale pending row before asking Steam again.
+  clearPendingSell(assetid)
+  let result: steam.SellResult
   try {
-    res.json(await steam.sellItem(assetid, price, contextid && contextid !== '2' ? contextid : undefined))
+    result = await steam.sellItem(assetid, price, contextid && contextid !== '2' ? contextid : undefined)
   } catch (err) {
     res.status(401).json({ error: (err as Error).message })
+    return
   }
+  if (!result.success) {
+    res.json(result)
+    return
+  }
+  // Steam accepted the sell but will not list it until you approve it in the
+  // Steam Mobile app. Remember that so the grid can say "awaiting approval"
+  // instead of offering to sell an item that is already committed, and start
+  // watching for it to become a listing (or be rejected).
+  const item = listItems().find((i) => i.assetid === assetid)
+  markPendingSell({ assetid, market_hash_name: item?.market_hash_name ?? null, price_cents: price })
+  if (!result.needs_mobile_confirmation) {
+    // Steam listed it outright, so the listing should already exist — confirm
+    // immediately instead of waiting out the backoff.
+void refreshListings().catch((err) => console.warn('[listings] post-cancel refresh failed:', err.message))
+  }
+  res.json({ ...result, pending: true })
 })
 
 app.post('/api/cancel', async (req, res) => {
@@ -151,11 +173,29 @@ app.post('/api/cancel', async (req, res) => {
     res.status(400).json({ error: 'listingid is required' })
     return
   }
+  let result: { success: boolean }
   try {
-    res.json(await steam.cancelListing(listingid))
+    result = await steam.cancelListing(listingid)
   } catch (err) {
     res.status(401).json({ error: (err as Error).message })
+    return
   }
+  if (!result.success) {
+    res.json(result)
+    return
+  }
+  // Stop showing it as listed straight away rather than after the next sync,
+  // then reconcile against Steam to confirm it really is gone.
+  forgetListing(listingid)
+  void refreshListings()
+  // The asset is back in the active inventory, but our cached row still says
+  // context 16 / marketable=0, which would drop it out of the grid until the
+  // next full sync. Re-read both contexts so it comes back immediately.
+  void steam
+    .refreshInventoryContexts()
+    .then(() => undefined)
+    .catch((err: Error) => console.warn('[inventory] post-cancel context refresh failed:', err.message))
+  res.json(result)
 })
 
 const distDir = path.resolve(process.cwd(), 'dist')

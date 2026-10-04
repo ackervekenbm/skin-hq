@@ -57,6 +57,21 @@ db.exec(`
       appid INTEGER NOT NULL DEFAULT 730,
       updated_at TEXT NOT NULL
     );
+    -- Sell requests Steam has accepted but that have not become listings yet:
+    -- Steam holds them until the sell is confirmed in the Steam Mobile app. The
+    -- row is the app's memory of that in-between state, so the grid can say
+    -- "awaiting approval" instead of pretending the item is still sellable.
+    -- state: 'awaiting' while we have seen nothing, 'declined' once the asset
+    -- is still marketable in the active context (the confirmation was rejected
+    -- in the mobile app, or expired).
+    CREATE TABLE IF NOT EXISTS pending_listings (
+      assetid TEXT PRIMARY KEY,
+      market_hash_name TEXT,
+      price_cents INTEGER,
+      state TEXT NOT NULL DEFAULT 'awaiting',
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    );
   `)
 
   // Migrations for pre-P1-B databases: add the liquidity/float columns that
@@ -114,6 +129,11 @@ export function upsertItems(items: ItemRow[]): void {
     `INSERT INTO items (assetid, appid, contextid, market_hash_name, name, type, icon_url, tradable, marketable, raw, own_float, own_seed, own_stickers, updated_at)
      VALUES (@assetid, @appid, @contextid, @market_hash_name, @name, @type, @icon_url, @tradable, @marketable, @raw, @own_float, @own_seed, @own_stickers, @updated_at)
      ON CONFLICT(assetid) DO UPDATE SET
+       -- contextid moves between 2 (active) and 16 (listed / on-market) as items
+       -- get listed and cancelled, so it must be updated and not only inserted.
+       -- Without this a cancelled item keeps its stale context, the grid reads it
+       -- as unsellable, and the item vanishes from the UI until the next sync.
+       contextid = excluded.contextid,
        market_hash_name = excluded.market_hash_name,
        name = excluded.name,
        type = excluded.type,
@@ -121,9 +141,12 @@ export function upsertItems(items: ItemRow[]): void {
        tradable = excluded.tradable,
        marketable = excluded.marketable,
        raw = excluded.raw,
-       own_float = excluded.own_float,
-       own_seed = excluded.own_seed,
-       own_stickers = excluded.own_stickers,
+       -- Own-item floats come from a best-effort asset_properties pass. Keep the
+       -- stored value when a sync has no float for this asset, otherwise one
+       -- failed (or skipped) pass silently erases the whole inventory's floats.
+       own_float = COALESCE(excluded.own_float, items.own_float),
+       own_seed = COALESCE(excluded.own_seed, items.own_seed),
+       own_stickers = COALESCE(excluded.own_stickers, items.own_stickers),
        updated_at = excluded.updated_at`,
   )
   const tx = db.transaction((rows: ItemRow[]) => rows.forEach((r) => stmt.run(r)))
@@ -132,6 +155,10 @@ export function upsertItems(items: ItemRow[]): void {
 
 export function listItems(): ItemRow[] {
   return db.prepare('SELECT * FROM items ORDER BY updated_at DESC').all() as ItemRow[]
+}
+
+export function getItem(assetid: string): ItemRow | undefined {
+  return db.prepare('SELECT * FROM items WHERE assetid = ?').get(assetid) as ItemRow | undefined
 }
 
 export interface ItemRow {
@@ -244,4 +271,57 @@ export function replaceMyListings(rows: MyListingRow[]): void {
 
 export function listMyListings(): MyListingRow[] {
   return db.prepare('SELECT * FROM my_listings').all() as MyListingRow[]
+}
+
+export function deleteMyListing(listingid: string): void {
+  db.prepare('DELETE FROM my_listings WHERE listingid = ?').run(listingid)
+}
+
+export type PendingState = 'awaiting' | 'declined'
+
+export interface PendingListingRow {
+  assetid: string
+  market_hash_name: string | null
+  price_cents: number | null
+  state: PendingState
+  created_at: string
+  updated_at: string
+}
+
+export function upsertPendingListing(row: {
+  assetid: string
+  market_hash_name: string | null
+  price_cents: number | null
+}): void {
+  const now = new Date().toISOString()
+  db.prepare(
+    `INSERT INTO pending_listings (assetid, market_hash_name, price_cents, state, created_at, updated_at)
+     VALUES (@assetid, @market_hash_name, @price_cents, 'awaiting', @now, @now)
+     ON CONFLICT(assetid) DO UPDATE SET
+       market_hash_name = excluded.market_hash_name,
+       price_cents = excluded.price_cents,
+       state = 'awaiting',
+       updated_at = excluded.updated_at`,
+  ).run({ ...row, now })
+}
+
+export function listPendingListings(): PendingListingRow[] {
+  return db.prepare('SELECT * FROM pending_listings ORDER BY created_at').all() as PendingListingRow[]
+}
+
+export function setPendingListingState(assetids: string[], state: PendingState): void {
+  if (assetids.length === 0) return
+  const stmt = db.prepare('UPDATE pending_listings SET state = ?, updated_at = ? WHERE assetid = ?')
+  const now = new Date().toISOString()
+  db.transaction(() => {
+    for (const assetid of assetids) stmt.run(state, now, assetid)
+  })()
+}
+
+export function deletePendingListings(assetids: string[]): void {
+  if (assetids.length === 0) return
+  const stmt = db.prepare('DELETE FROM pending_listings WHERE assetid = ?')
+  db.transaction(() => {
+    for (const assetid of assetids) stmt.run(assetid)
+  })()
 }
