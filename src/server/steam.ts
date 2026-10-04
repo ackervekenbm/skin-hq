@@ -2,7 +2,7 @@ import SteamCommunity from 'steamcommunity'
 import type { CEconItem } from 'steamcommunity'
 import { EAuthSessionGuardType, EAuthTokenPlatformType, LoginSession } from 'steam-session'
 import type { StartSessionResponse } from 'steam-session/dist/interfaces-external'
-import { clearSession, loadSession, saveSession, upsertItems } from './db'
+import { clearSession, getItem, loadSession, saveSession, upsertItems } from './db'
 import { decodeSsrOrderbook } from './orderbook'
 import { attachedFromDescriptions, inspectFromProperties, type AssetPropertyEntry, type OwnItemFloat } from './floats'
 
@@ -355,6 +355,24 @@ function fetchContext(contextid: string): Promise<CEconItem[]> {
   })
 }
 
+// Which of `assetids` are still sitting in the active inventory context, and is
+// Steam still offering them for sale? This is the signal that separates "Steam
+// is holding the sell pending a mobile approval" from "the sell never happened
+// (rejected in the app, or the confirmation expired)": an asset Steam is still
+// happy to sell has not been committed to the market. One request, context 2
+// only, so it is cheap enough to poll while a pending sell is outstanding.
+export async function activeSellability(assetids: string[]): Promise<Map<string, boolean>> {
+  const wanted = new Set(assetids)
+  const result = new Map<string, boolean>()
+  if (wanted.size === 0) return result
+  requireSession()
+  const items = await fetchContext(CONTEXTID)
+  for (const item of items) {
+    if (wanted.has(item.assetid)) result.set(item.assetid, !!item.marketable)
+  }
+  return result
+}
+
 function mapItem(item: CEconItem, contextid: string): InventoryItem {
   return {
     assetid: item.assetid,
@@ -395,10 +413,45 @@ export async function getInventory(): Promise<{ items: InventoryItem[]; total: n
   return { items, total: items.length }
 }
 
-// The CS2 inventory JSON served to the page now exposes per-asset
-// "asset_properties" with the self-encoded Item Certificate hex; decode it
-// offline to get exact floats/seeds/stickers for owned items. A failure here
-// must not fail the inventory sync — best-effort.
+/**
+ * Re-read both inventory contexts and persist just the context/marketable
+ * changes, without the expensive asset_properties (float) pass.
+ *
+ * Listing or cancelling moves an asset between context 2 (active) and context 16
+ * (on the market), and Steam flips `marketable` with it. Our cached row only
+ * catches up on a full sync, so in the meantime the grid either keeps offering a
+ * sold item or hides one that just came back. Two requests is cheap enough to
+ * run right after a market action.
+ */
+export async function refreshInventoryContexts(): Promise<{ total: number }> {
+  requireSession()
+  const byId = new Map<string, InventoryItem>()
+  for (const contextid of [CONTEXTID, '16']) {
+    try {
+      for (const item of await fetchContext(contextid)) {
+        if (!byId.has(item.assetid)) byId.set(item.assetid, mapItem(item, contextid))
+      }
+    } catch (err) {
+      console.warn(`[inventory] context ${contextid} refresh failed:`, (err as Error).message)
+    }
+  }
+  const items = [...byId.values()]
+  // Persist the context/marketable fields only, and only for assets that moved,
+  // so this can never clear stored own-item floats (see upsertItems' COALESCE).
+  const moved = items.filter((i) => {
+    const row = getItem(i.assetid)
+    return row == null || row.contextid !== i.contextid || row.marketable !== (i.marketable ? 1 : 0)
+  })
+  if (moved.length > 0) persistItems(moved)
+  console.info(`[inventory] context refresh: ${items.length} assets, ${moved.length} moved`)
+  return { total: items.length }
+}
+
+// The CS2 inventory JSON exposes per-asset "asset_properties" whose
+// "propertyid 6" ("Item Certificate") is the self-encoded inspect-link hex;
+// floats.ts decodes it offline. This is the expensive half of an inventory read
+// and is skipped by refreshInventoryContexts(). A failure must not fail the
+// inventory sync — best-effort.
 async function attachOwnFloats(byId: Map<string, InventoryItem>): Promise<void> {
   try {
     const props = await fetchOwnAssetProperties()

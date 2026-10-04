@@ -1,3 +1,5 @@
+import { steamNetFromBuyerPrice } from '../shared/fees'
+
 export interface StickerRef {
   name: string
   slot: number
@@ -112,4 +114,66 @@ export function eurosToCents(input: string): number | null {
     return eurosFromNumber(text)
   }
   return eurosFromNumber(text)
+}
+
+export function centsToEuros(cents: number): string {
+  return (cents / 100).toFixed(2)
+}
+
+export interface QuickPrice {
+  label: string
+  cents: number
+  title: string
+}
+
+/**
+ * Reference asks for the sell box, derived from the prices we already show.
+ *
+ * Every market number we display (floor, median, top buy) is what the *buyer*
+ * pays, but the sell box takes what the *seller* asks — and Steam adds ~15% on
+ * top of the ask. Typing the floor straight into the box would put you above
+ * everyone instead of on the floor, so each chip converts through the same fee
+ * math the server uses and returns the ask that lands on that buyer price.
+ */
+export function quickPrices(steam: GridPrice | null | undefined): QuickPrice[] {
+  if (!steam || steam.provider !== 'steam') return []
+  const chips: QuickPrice[] = []
+  const askFor = (buyerCents: number | null | undefined): number | null => {
+    if (buyerCents == null || buyerCents <= 0) return null
+    const ask = steamNetFromBuyerPrice(buyerCents)
+    return ask > 0 ? ask : null
+  }
+
+  const floorAsk = askFor(steam.lowest_cents)
+  if (floorAsk != null) {
+    chips.push({
+      label: 'Match floor',
+      cents: floorAsk,
+      title: `Cheapest ask that still sits at the €${centsToEuros(steam.lowest_cents ?? 0)} floor`,
+    })
+    chips.push({
+      label: 'Undercut',
+      cents: Math.max(1, floorAsk - 1),
+      title: 'One cent under the floor, so you are the cheapest seller',
+    })
+  }
+
+  const medianAsk = askFor(steam.median_cents)
+  if (medianAsk != null) {
+    chips.push({
+      label: 'At median',
+      cents: medianAsk,
+      title: `Ask that lands on the €${centsToEuros(steam.median_cents ?? 0)} 24h median`,
+    })
+  }
+
+  const buyAsk = askFor(steam.highest_buy_cents)
+  if (buyAsk != null) {
+    chips.push({
+      label: 'At top buy',
+      cents: buyAsk,
+      title: `Ask that lands on the €${centsToEuros(steam.highest_buy_cents ?? 0)} best standing buy order`,
+    })
+  }
+  return chips
 }

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   baseName,
+  centsToEuros,
   eurosToCents,
   formatAmount,
   formatAutoSyncMin,
@@ -9,12 +10,14 @@ import {
   formatGridPrice,
   isStatTrak,
   parseStickers,
+  quickPrices,
   relTime,
   wearOf,
   type GridPrice,
   type StickerRef,
 } from './format'
 import { groupByRarity, type RarityGroup } from './grouping'
+import { canCancel, canSell, itemState, ITEM_STATE_LABEL, type PendingView } from './itemState'
 
 interface AuthStatus {
   loggedIn: boolean
@@ -41,6 +44,7 @@ interface GridItem {
   own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, GridPrice>
   listing: { listingid: string; price_cents: number | null } | null
+  pending: PendingView | null
   pricesSyncedAt: string | null
 }
 
@@ -59,7 +63,7 @@ interface SyncStatus {
 
 interface GridResponse {
   refreshedAt: string | null
-  counts: { inventory: number; marketable: number; listed: number }
+  counts: { inventory: number; marketable: number; listed: number; pending: number }
   sync: SyncStatus
   items: GridItem[]
 }
@@ -308,16 +312,19 @@ export default function App() {
     return true
   }
 
-  const refreshGrid = useCallback(async () => {
-    let g: GridResponse | null = null
-    try {
-      g = await api<GridResponse>('/api/grid')
-      setGrid(g)
-    } catch (err) {
-      pushLog('err', `grid: ${(err as Error).message}`)
-    }
-    return g
-  }, [pushLog])
+  const refreshGrid = useCallback(
+    async (opts?: { silent?: boolean }) => {
+      let g: GridResponse | null = null
+      try {
+        g = await api<GridResponse>('/api/grid')
+        setGrid(g)
+      } catch (err) {
+        if (!opts?.silent) pushLog('err', `grid: ${(err as Error).message}`)
+      }
+      return g
+    },
+    [pushLog],
+  )
 
   const loadGrid = useCallback(async () => {
     const g = await refreshGrid()
@@ -424,6 +431,43 @@ export default function App() {
 
   const syncDisplay = syncStatus ?? grid?.sync ?? null
 
+  // A sell only exists once you approve it in the Steam Mobile app, so the item
+  // sits in limbo between "Steam took the request" and "there is a listing".
+  // While anything is in that window, watch the grid closely: the server
+  // reconciles the pending sell against Steam's live listing set, so the badge
+  // flips within seconds of the approval rather than at the next hourly sync.
+  // The poll stops on its own as soon as nothing is pending.
+  const awaitingCount = useMemo(() => (grid?.items ?? []).filter((i) => itemState(i) === 'awaiting').length, [grid])
+  const knownPending = useRef<Map<string, string>>(new Map())
+  useEffect(() => {
+    if (awaitingCount === 0) return undefined
+    const timer = setInterval(() => {
+      void api<GridResponse>('/api/grid')
+        .then((g) => {
+          // Say what happened to the sell the moment it resolves, either way.
+          // Without this a rejected confirmation is invisible: the badge just
+          // quietly goes back to "sellable" and looks like the button did nothing.
+          const next = new Map<string, string>()
+          for (const item of g.items) {
+            const state = itemState(item)
+            if (state === 'awaiting' || state === 'rejected') next.set(item.assetid, state)
+          }
+          for (const [assetid, state] of next) {
+            if (knownPending.current.get(assetid) !== 'awaiting') continue
+            const name = g.items.find((i) => i.assetid === assetid)?.name ?? assetid
+            if (state === 'listed') pushLog('ok', `sell ${name}: approved in Steam Mobile — listed`)
+            else pushLog('err', `sell ${name}: Steam rejected or expired it — you can list it again`)
+          }
+          knownPending.current = next
+          setGrid(g)
+        })
+        .catch(() => {
+          /* transient — next tick */
+        })
+    }, 2500)
+    return () => clearInterval(timer)
+  }, [awaitingCount, pushLog])
+
   // Auto-sync visibility: the server runs scheduled syncs this tab didn't
   // start. Poll /api/sync/status and surface progress + refresh the grid when
   // an un-watched run finishes, so "prices synced" timestamps move on their
@@ -466,7 +510,7 @@ export default function App() {
   }, [status?.loggedIn, syncWatching, loadGrid, refreshGrid, pushLog])
 
   async function doSell(item: GridItem) {
-    if (!item.marketable || !!item.listing || sellingIds.includes(item.assetid)) return
+    if (!canSell(item) || sellingIds.includes(item.assetid)) return
     const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
     if (priceCents == null) {
       pushLog('err', `sell ${item.name}: enter a positive price in euros (e.g. 12,50)`)
@@ -478,8 +522,19 @@ export default function App() {
         method: 'POST',
         body: JSON.stringify({ assetid: item.assetid, contextid: item.contextid, price: priceCents }),
       })
-      const state = r.needs_mobile_confirmation ? 'needs your confirmation in Steam Mobile' : r.success ? 'listed' : 'failed'
-      pushLog(r.success ? 'ok' : 'err', `sell ${item.name} @ ${formatEuro(priceCents)}: ${state}${r.message ? ` (${r.message})` : ''}`)
+      // Re-read the grid immediately: the item is now committed to a sell, and
+      // the card has to stop offering to sell it while Steam waits for your
+      // approval. This is what was missing — the grid used to keep reporting the
+      // pre-sell state until the next hourly sync.
+      knownPending.current.set(item.assetid, 'awaiting')
+      await refreshGrid()
+      if (r.needs_mobile_confirmation) {
+        pushLog('warn', `sell ${item.name} @ ${formatEuro(priceCents)}: approve it in Steam Mobile to go live`)
+      } else if (r.success) {
+        pushLog('ok', `sell ${item.name} @ ${formatEuro(priceCents)}: listed`)
+      } else {
+        pushLog('err', `sell ${item.name}: ${r.message ?? 'Steam refused the listing'}`)
+      }
     } catch (err) {
       pushLog('err', `sell ${item.name}: ${(err as Error).message}`)
     } finally {
@@ -491,7 +546,7 @@ export default function App() {
     try {
       const r = await api<{ success: boolean }>('/api/cancel', { method: 'POST', body: JSON.stringify({ listingid }) })
       pushLog(r.success ? 'ok' : 'err', `cancel ${listingid}: ${r.success ? 'done' : 'failed'}`)
-      await loadGrid()
+      if (r.success) await loadGrid()
     } catch (err) {
       pushLog('err', `cancel: ${(err as Error).message}`)
     }
@@ -505,7 +560,7 @@ export default function App() {
   const renderCard = (item: GridItem) => {
     const wear = wearOf(item.market_hash_name)
     const st = isStatTrak(item.name, item.market_hash_name)
-    const listing = item.listing
+    const state = itemState(item)
     const steam = item.prices.steam
     const csfloat = item.prices.csfloat
     const stickers = parseStickers(csfloat?.stickers)
@@ -718,14 +773,20 @@ export default function App() {
             className="muted c-synced"
             title={item.pricesSyncedAt ? `Prices synced ${new Date(item.pricesSyncedAt).toLocaleString()}` : 'No price snapshots yet'}
           >
-            prices synced {item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}
+            {state === 'awaiting' ? (
+              <span className="pending-note" title="Steam is holding this sell until you approve it in the Steam Mobile app">
+                Approve in Steam Mobile
+              </span>
+            ) : (
+              `prices synced ${item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}`
+            )}
           </p>
           <div className="c-foot-right">
-            <span className={`badge ${listing || item.marketable ? 'ok' : 'muted'}`}>
-              {listing ? 'listed' : item.marketable ? 'marketable' : 'restricted'}
+            <span className={`badge${state === 'listed' ? ' ok' : state === 'awaiting' || state === 'rejected' ? ' warn' : ''}`}>
+              {ITEM_STATE_LABEL[state]}
             </span>
             <button className="btn btn-primary" onClick={() => openDetail(item)}>
-              {listing ? 'Manage listing' : item.marketable ? 'Sell' : 'Details'}
+              {state === 'listed' || state === 'awaiting' ? 'Manage listing' : state === 'rejected' ? 'Try again' : 'Sell'}
             </button>
           </div>
         </div>
@@ -735,6 +796,9 @@ export default function App() {
 
   const renderDetailModal = (item: GridItem) => {
     const current = grid?.items.find((i) => i.assetid === item.assetid) ?? item
+    const state = itemState(current)
+    const sellable = canSell(current)
+    const chips = quickPrices(current.prices.steam)
     const wear = wearOf(item.market_hash_name)
     const st = isStatTrak(item.name, item.market_hash_name)
     const isCharm = /^charm \|/i.test(item.name) || /^charm \|/i.test(item.market_hash_name)
@@ -877,36 +941,85 @@ export default function App() {
 
         <div className="modal-sell">
           <div className="c-status">
-            <span className={`badge ${current.listing || current.marketable ? 'ok' : 'muted'}`}>
-              {current.listing ? 'listed' : current.marketable ? 'marketable' : 'restricted'}
+            <span className={`badge${state === 'listed' ? ' ok' : state === 'awaiting' || state === 'rejected' ? ' warn' : ''}`}>
+              {ITEM_STATE_LABEL[state]}
             </span>
-            {current.listing?.price_cents != null && <span className="mono price">{formatEuro(current.listing.price_cents)}</span>}
+            {(state === 'listed' ? current.listing?.price_cents : state === 'awaiting' ? current.pending?.price_cents : null) != null && (
+              <span className="mono price">
+                {formatEuro(state === 'listed' ? current.listing?.price_cents : current.pending?.price_cents)}
+              </span>
+            )}
           </div>
+
+          {state === 'awaiting' && (
+            <p className="hint">
+              Steam is holding this sell until you approve it in the Steam Mobile app. Nothing is live on the market yet, and
+              this card updates by itself once you do.
+            </p>
+          )}
+          {state === 'rejected' && (
+            <p className="hint hint-warn">
+              Steam rejected or expired that sell, so nothing was listed. The item is available again — set a price and try
+              again.
+            </p>
+          )}
+
+          {sellable && chips.length > 0 && (
+            <div className="quick-prices">
+              <span className="quick-prices-label">Quick ask</span>
+              {chips.map((chip) => (
+                <button
+                  key={chip.label}
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  title={chip.title}
+                  onClick={() =>
+                    setSellPrices((prev) => ({
+                      ...prev,
+                      [current.assetid]: centsToEuros(chip.cents),
+                    }))
+                  }
+                >
+                  {chip.label}
+                  <span className="quick-price-value">{formatEuro(chip.cents)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+
           <div className="sell-row">
             <input
-              placeholder="Sell €"
+              placeholder={sellable ? 'Your ask in €' : '—'}
               value={sellPrices[current.assetid] ?? ''}
               onChange={(e) => setSellPrices((prev) => ({ ...prev, [current.assetid]: e.target.value }))}
               onKeyDown={(e) => {
                 if (e.key === 'Enter') void doSell(current)
               }}
-              disabled={!current.marketable || !!current.listing || sellingIds.includes(current.assetid)}
+              disabled={!sellable || sellingIds.includes(current.assetid)}
               inputMode="decimal"
               autoComplete="off"
+              aria-label="Your ask price in euros"
             />
-            <button
-              className="btn btn-primary"
-              onClick={() => void doSell(current)}
-              disabled={!current.marketable || !!current.listing || sellingIds.includes(current.assetid)}
-            >
-              {sellingIds.includes(current.assetid) ? 'Selling…' : 'Sell'}
-            </button>
-            {current.listing && (
-              <button className="btn btn-ghost" onClick={() => current.listing && void doCancel(current.listing.listingid)}>
-                Cancel
+            {sellable && (
+              <button
+                className="btn btn-primary"
+                onClick={() => void doSell(current)}
+                disabled={sellingIds.includes(current.assetid)}
+              >
+                {sellingIds.includes(current.assetid) ? 'Sending…' : state === 'rejected' ? 'Try again' : 'Sell'}
+              </button>
+            )}
+            {canCancel(current) && current.listing && (
+              <button className="btn btn-ghost" onClick={() => void doCancel(current.listing?.listingid ?? '')}>
+                Cancel listing
               </button>
             )}
           </div>
+          {sellable && (
+            <p className="footnote">
+              You type the amount you receive; Steam adds its fee on top. The quick asks above already account for it.
+            </p>
+          )}
         </div>
       </div>
     )
@@ -1083,6 +1196,7 @@ export default function App() {
               {listedOnly
                 ? `${grid?.items.filter((i) => i.listing).length ?? 0} listed shown`
                 : `${grid?.counts.inventory ?? 0} owned · ${grid?.counts.marketable ?? 0} marketable · ${grid?.counts.listed ?? 0} listed`}
+              {!!grid?.counts.pending && ` · ${grid.counts.pending} awaiting approval`}
             </p>
           </div>
           <div className="head-tools">
