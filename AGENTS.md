@@ -17,10 +17,21 @@ npm run build     # = typecheck && lint && vite build && tsup server  ← the ve
 npm test          # vitest unit tests (tests/, node env)
 ```
 
+Installs are **script-free**: `.npmrc` sets `ignore-scripts=true`.
+`better-sqlite3` (13.x) ships `prebuilds/<platform>.node` (glibc + musl, amd64 +
+arm64), so nothing needs compiling, but npm would otherwise run its legacy
+implicit `node-gyp rebuild` on every install, which wants python3/make/g++ and
+discards the shipped binary. protobufjs's postinstall only prints a warning, so
+skipping it is safe. The Dockerfile relies on this; a dependency that genuinely
+needs an install script cannot be added without revisiting `.npmrc`.
+
 **Verification for every change is `npm run build && npm test`** (`npm run
 build` = typecheck && lint && vite build && tsup server). CI runs the `check`
 job (`npm ci && npm run build && npm test`) on every PR, and a green `check`
-is required to merge.
+is required to merge. Every PR also runs the **smoke** job
+(`.github/workflows/docker-build.yml`): build the image, boot it, and check
+that the app runs as `node`, takes over a root-owned data volume (without
+following a planted symlink) and works with `--user 1000:1000`.
 
 ## Issue-first workflow (MANDATORY)
 
@@ -96,16 +107,18 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   a delay between sell/cancel batches). UI never blocks on live calls —
   background jobs write snapshots to SQLite, UI reads the cache.
 - `better-sqlite3` is a native module: must stay external in the tsup build
-  and be installed in the runtime image. On Alpine/musl the prebuilt wheel
-  must match — if the Phase 0/spike Docker run fails, fall back to
-  `node:22-slim`.
+  and be installed in the runtime image. Its bundled musl prebuild serves
+  `node:22-alpine`; a major that changes the native ABI or drops a musl
+  prebuild is caught by the smoke job before merge.
 - Steam sessions are cookie-based and do not survive forever; handle
   `sessionExpired` and surface a re-login prompt.
 
 ## Dependencies / Dependabot
 
 - Dependabot majors stay **enabled** — do not add `ignore` rules without the
-  maintainer asking.
+  maintainer asking. One exception: the Docker base image is pinned by digest
+  and Dependabot keeps it patched, but Node majors are a deliberate move, so
+  they are ignored there.
 
 ## Deployment (local)
 
@@ -115,7 +128,13 @@ docker compose up --build
 ```
 
 Open <http://localhost:8090>. The container runs the Express server
-(`node:22-alpine`, healthcheck against `/api/health`) with a named volume for
-`/app/data` (SQLite + encrypted session). GHCR multi-arch publishing
-(`.github/workflows/docker-build.yml` — amd64 + arm64 native runners +
-manifest merge) is planned but **not yet added**; see `docs/plan.md`.
+(`node:22-alpine`, pinned by digest, healthcheck against `/api/health`) with a
+named volume for `/app/data` (SQLite + encrypted session). The process runs as
+the image's unprivileged `node` user (uid 1000): `docker-entrypoint.sh` starts
+as root only to hand `/app/data` to `node` (files a root-run image or a
+restore left there) and then drops to it with `su-exec`.
+
+On `main`, after the smoke job, the image is built natively per arch (amd64 +
+arm64 runners, no QEMU) and combined into the multi-arch
+`ghcr.io/ackervekenbm/skin-hq:latest` / `:<sha7>`. The OpenMediaVault guide is
+`docs/deploy-openmediavault.md`.

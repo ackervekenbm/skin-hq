@@ -65,7 +65,8 @@ docker compose up -d          # pulls ghcr.io/ackervekenbm/skin-hq and runs it
 
 Then open <http://localhost:8090>. The image is multi-stage: the app is
 compiled in `node:22-alpine`, then run by `node:22-alpine` running the
-Express server (API + static client). No secrets are baked into the image;
+Express server (API + static client) as the unprivileged `node` user; a data
+folder left behind by an older, root-run image is handed over on start. No secrets are baked into the image;
 compose injects them from the server's `.env` at runtime. Data lives in the
 Docker volume `skin-hq-data`, so redeploys keep your session and cache.
 

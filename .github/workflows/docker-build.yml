@@ -3,121 +3,205 @@ name: Docker build & publish
 on:
   push:
     branches: [main]
-    tags: ['v*']
+  # Every PR, regardless of paths: `smoke` is a required check, so it has to
+  # report on every PR. Docker isn't installed on the dev machine (see #16).
   pull_request:
   workflow_dispatch:
 
+# One run per ref at a time, queued rather than cancelled: two quick merges
+# must not let the older run's manifest job move :latest back.
 concurrency:
   group: docker-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
+
+permissions:
+  contents: read
 
 env:
-  REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  publish:
-    name: Build & push GHCR image (amd64 + arm64)
-    needs: smoke
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      packages: write
-    # Only tags and the default branch publish — a workflow_dispatch on a
-    # feature branch must never push branch images into the (public) registry.
-    if: >-
-      github.event_name != 'pull_request' &&
-      (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/'))
-    steps:
-      - name: Check out code
-        uses: actions/checkout@v7
-
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v4
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ${{ env.REGISTRY }}
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Extract metadata
-        id: meta
-        uses: docker/metadata-action@v6
-        with:
-          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
-            type=ref,event=branch
-            type=edge
-            type=sha
-            type=semver,pattern={{version}}
-            type=semver,pattern={{major}}.{{minor}}
-
-      - name: Build and push (amd64 + arm64)
-        uses: docker/build-push-action@v7
-        with:
-          context: .
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          build-args: |
-            COMMIT_SHA=${{ github.sha }}
-            BUILD_TIME=${{ github.event.head_commit.timestamp }}
-            GITHUB_REPOSITORY=${{ github.repository }}
-
   smoke:
-    name: Smoke test (container boots, /api/health ok)
+    name: smoke
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Validates the Dockerfile on every PR/main in CI because docker is not
-    # installed on the dev machine (see #16).
     steps:
-      - name: Check out code
-        uses: actions/checkout@v7
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build image (amd64, no push)
-        uses: docker/build-push-action@v7
+      - name: Build image (no push)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: .
-          platforms: linux/amd64
           load: true
-          push: false
           tags: skin-hq:smoke
-          build-args: |
-            COMMIT_SHA=${{ github.sha }}
-            BUILD_TIME=${{ github.event.head_commit.timestamp || '' }}
-            GITHUB_REPOSITORY=${{ github.repository }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
 
-      - name: Boot container and wait for /api/health
+      - name: Boot container
+        run: docker run -d --name smoke -e SKINHQ_SESSION_KEY=ci-smoke-key -p 8080:3000 skin-hq:smoke
+
+      - name: Wait for /api/health
         run: |
-          set -euo pipefail
-          docker run -d --name skin-hq-smoke \
-            -e SKINHQ_SESSION_KEY=ci-smoke-key \
-            -p 3000:3000 \
-            skin-hq:smoke
+          set -e
           for i in $(seq 1 60); do
-            if curl -fsS http://127.0.0.1:3000/api/health 2>/dev/null | grep -q '"ok":true'; then
-              echo "health OK"
+            if curl -fsS http://127.0.0.1:8080/api/health | grep -q '"ok":true'; then
+              echo "healthy after ${i}s"
               exit 0
             fi
             sleep 1
           done
-          echo "container never became healthy"
+          echo "::error::server did not become healthy in 60s"
           exit 1
 
-      - name: Show container logs (on failure)
-        if: failure()
-        run: docker logs skin-hq-smoke || true
+      - name: Assert the app runs as the unprivileged node user
+        run: |
+          set -e
+          # PID 1 is the app after the entrypoint's exec; its owner is the user it runs as.
+          user=$(docker exec smoke stat -c %U /proc/1)
+          echo "app runs as: $user"
+          test "$user" = node
+          test "$(docker exec smoke stat -c %U /app/data)" = node
 
-      - name: Clean up
-        if: always()
-        run: docker rm -f skin-hq-smoke || true
+      - name: Take over a data volume a root-run image left behind
+        run: |
+          set -e
+          # What an image from before the app dropped root leaves: a root-owned
+          # folder and database that the node user can't write. Plus a
+          # root-owned symlink to the entrypoint: the handover must not follow
+          # it and give node a file that runs as root.
+          docker volume create smoke-old
+          docker run --rm -v smoke-old:/data alpine:3.24 sh -c \
+            'touch /data/skin-hq.db && ln -s /usr/local/bin/skin-hq-entrypoint /data/trap && chown -R -h 0:0 /data && chmod 755 /data && chmod 644 /data/skin-hq.db'
+          docker run -d --name smoke-old -e SKINHQ_SESSION_KEY=ci-smoke-key -p 8081:3000 -v smoke-old:/app/data skin-hq:smoke
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8081/api/health | grep -q '"ok":true'; then
+              echo "healthy after ${i}s"
+              break
+            fi
+            if [ "$i" = 60 ]; then echo "::error::root-owned volume: not healthy in 60s"; docker logs smoke-old; exit 1; fi
+            sleep 1
+          done
+          docker exec smoke-old sh -c 'stat -c "%U %n" /app/data /app/data/*'
+          test -z "$(docker exec smoke-old find /app/data ! -type l ! -user node)"
+          # The symlink was skipped: its target still belongs to root.
+          test "$(docker exec smoke-old stat -c %U /usr/local/bin/skin-hq-entrypoint)" = root
+
+      - name: Run as uid 1000 from the start
+        run: |
+          set -e
+          docker volume create smoke-user
+          docker run --rm -v smoke-user:/data alpine:3.24 chown 1000:1000 /data
+          docker run -d --name smoke-user --user 1000:1000 -e SKINHQ_SESSION_KEY=ci-smoke-key -p 8082:3000 -v smoke-user:/app/data skin-hq:smoke
+          for i in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8082/api/health | grep -q '"ok":true'; then
+              echo "healthy after ${i}s"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::--user 1000:1000: not healthy in 60s"
+          docker logs smoke-user
+          exit 1
+
+      - name: Dump container logs
+        if: failure()
+        run: |
+          for c in smoke smoke-old smoke-user; do
+            echo "== $c"
+            docker logs "$c" 2>&1 || true
+          done
+
+  build:
+    # Build each architecture natively (no QEMU emulation): amd64 on the
+    # x86 runner, arm64 on GitHub's native arm64 runner.
+    needs: smoke
+    # Publish only from main. A manual (workflow_dispatch) run from another
+    # branch still runs the smoke job, but must not overwrite :latest.
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            platform: linux/amd64
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            platform: linux/arm64
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Resolve build metadata
+        # Commit timestamp, straight from the checkout: head_commit is only
+        # present on push events, so manual builds would otherwise ship an
+        # empty BUILD_TIME.
+        run: echo "BUILD_TIME=$(git log -1 --format=%cI)" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push (${{ matrix.platform }})
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: true
+          platforms: ${{ matrix.platform }}
+          build-args: |
+            COMMIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ env.BUILD_TIME }}
+            GITHUB_REPOSITORY=${{ github.repository }}
+          # Plain single-arch images (no SBOM/provenance attestations) so the
+          # manifest job can amend them into a multi-arch index.
+          provenance: false
+          sbom: false
+          tags: |
+            ${{ env.IMAGE }}:latest-${{ matrix.arch }}
+            ${{ env.IMAGE }}:${{ github.sha }}-${{ matrix.arch }}
+
+  manifest:
+    # Combine the per-arch images into a single multi-arch index so the
+    # plain tags (:latest and :<sha7>) resolve to the right variant per host.
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create and push multi-arch manifest
+        run: |
+          set -e
+          IMAGE="${{ env.IMAGE }}"
+          SHA_SHORT=$(echo "${{ github.sha }}" | cut -c1-7)
+          docker manifest create "$IMAGE:latest" \
+            --amend "$IMAGE:latest-amd64" \
+            --amend "$IMAGE:latest-arm64"
+          docker manifest push "$IMAGE:latest"
+          docker manifest create "$IMAGE:$SHA_SHORT" \
+            --amend "$IMAGE:${{ github.sha }}-amd64" \
+            --amend "$IMAGE:${{ github.sha }}-arm64"
+          docker manifest push "$IMAGE:$SHA_SHORT"
