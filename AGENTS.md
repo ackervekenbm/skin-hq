@@ -146,6 +146,11 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   maintainer asking. One exception: the Docker base image is pinned by digest
   and Dependabot keeps it patched, but Node majors are a deliberate move, so
   they are ignored there.
+- Second exception (issue #62): the `typescript` **major** is ignored in the
+  npm group because TypeScript 7 (the native-compiler line) is outside
+  typescript-eslint's `peer typescript <6.1.0` and would make the weekly group
+  uninstallable. Patch/minor updates on the 6.0 line still land. Lift the
+  ignore (and plan a deliberate TS7 migration) once typescript-eslint supports it.
 
 ## Deployment (local)
 
