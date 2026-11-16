@@ -22,6 +22,17 @@ build` = typecheck && lint && vite build && tsup server). CI runs the `check`
 job (`npm ci && npm run build && npm test`) on every PR, and a green `check`
 is required to merge.
 
+## README upkeep (MANDATORY)
+
+`README.md` is the project's public front page, so it has to match the app.
+Before opening a PR, check the README against your change and update it in
+the **same PR** when you add, remove or rename a feature, a control or a setting;
+change a command, script, port, environment variable or image tag; or change
+what is stored where. Keep its style: plain user-facing wording, no internal
+jargon. If nothing in the README is affected, say so in the PR description.
+AGENTS.md (architecture) and `docs/deploy-openmediavault.md` (deployment)
+follow the same rule.
+
 ## Issue-first workflow (MANDATORY)
 
 Before starting any new work item, create a GitHub issue:
@@ -32,17 +43,33 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
 
 - Name the branch `fix/...`, `feat/...` or `chore/...` (one per issue).
 - Put `Fixes #<n>` on its own line in the PR body so the issue auto-closes on merge.
-- Stack branches only when fixes are directly related; otherwise branch off `main`.
+- One issue, one PR, branched off the latest `main`. Every PR targets `main`
+  (`Fixes #<n>` only closes issues from there; CI runs on every PR, stacked
+  ones included).
+- Don't stack by default. Work that needs an unmerged PR goes into that PR, as
+  its own commit with its own `Fixes #<n>` line, or waits until it has merged.
+- When a stack is unavoidable, keep it small and say "merge #<n> first" in the
+  PR body. A squash lands the lower PR as a new commit, so the next PR conflicts
+  wherever it edits those lines again. Right after each merge, rebase the next
+  branch with `git fetch && git rebase origin/main` (git skips the commit that
+  already landed; add `--update-refs` from the top branch to move the whole
+  stack), then `git push --force-with-lease`. If the merged PR had several
+  commits, git can't match its squash: use
+  `git rebase --onto origin/main <old tip of the merged branch>`.
 
 ## Git / PR conventions
 
-- `main` is protected: **no direct pushes** — every change lands via a pull
-  request and a **squash merge**. Required check: `check` (CI). Branch
-  auto-delete on merge is expected.
-- **The PR author never merges their own PR.** Open the PR, make sure the
-  `check` status passes, then stop and let the maintainer review and merge.
-- Pattern: create branch → implement → `npm run build && npm test` → push → `gh pr create`
-  → wait for `check` to pass → leave for maintainer review.
+- `main` is protected (ruleset `main-branch-protection`): **no direct pushes**,
+  linear history, and every change lands via a pull request and a **squash
+  merge** (the only merge method). Required checks: `check` (CI) and `smoke`
+  (image), on a branch that is up to date with `main` (the PR's **Update
+  branch** button, or a rebase). CodeQL scans every PR, and Dependabot security
+  updates open their own PRs.
+- After merging, GitHub auto-deletes the head branch (`delete-branch-on-merge` is on).
+- Pattern: create branch → implement → update README/docs → `npm run build && npm test` → push → `gh pr create`
+  → merge once the checks pass. Use `gh pr merge --squash` when asked to merge.
+- **Never merge your own PR.** Ready PRs are handed over to a reviewer to merge;
+  if the author merges, the other party reviews the squash only after the fact.
 - Commit messages are imperative, single-paragraph (plus context lines), and
   reference the fix: `Fixes #<n>`.
 - **Branch hygiene** — keep the workspace tidy:
@@ -51,8 +78,8 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
     Also delete the local branch afterwards:
     `git checkout main && git fetch --prune && git branch -D <branch>`.
   - Periodically prune stale local branches whose remotes are already gone:
-    `git branch -vv` (look for `[origin/...: gone]`) or
-    `git fetch --prune && git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads | grep gone`. Keep the workspace down to `main` plus active work branches.
+    `git fetch --prune && git for-each-ref --format='%(refname:short) %(upstream:track)' refs/heads | grep gone`.
+    Keep the workspace down to `main` plus active work branches.
 
 ## Architecture
 
