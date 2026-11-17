@@ -110,6 +110,10 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   combines `priceoverview` with the SSR orderbook (`marketOrderSpread`);
   CSFloat provider is a best-effort raw fetch. Provider interface:
   `{ name, getItem(hash) }`.
+- `src/server/guard.ts` — the API has no login, so every POST under `/api`
+  must be JSON and must not carry a cross-site `Sec-Fetch-Site`; this keeps
+  other websites in the same browser from selling, cancelling or logging out.
+  Ids sent on to Steam are digits only (`isSteamId`).
 - `src/server/orderbook.ts` — pure decoder for the order book that Steam's
   React SSR listing page embeds in its `renderContext` payload (the classic
   `Market_LoadOrderSpread` HTML globals and the `itemordershistogram`

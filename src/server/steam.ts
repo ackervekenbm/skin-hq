@@ -302,8 +302,19 @@ export function httpJson(method: 'get' | 'post', uri: string, extra: Record<stri
   return new Promise<JsonResponse>((resolve, reject) => {
     const attempt = (remaining: number, delay: number): void => {
       const options = { json: true, ...extra }
-      const callback = (err: Error | null, response: { statusCode: number }, body: unknown) => {
+      const callback = (err: Error | null, response: { statusCode: number } | undefined, body: unknown) => {
         if (err) {
+          if (method === 'post') {
+            // Sell/cancel are not idempotent, so never retry them. Steam refuses
+            // them with a non-2xx status and a JSON { success: false, message }:
+            // hand that back so the caller can show Steam's own reason.
+            if (response && response.statusCode >= 400 && body && typeof body === 'object') {
+              resolve({ status: response.statusCode, body: body as Record<string, unknown> })
+            } else {
+              reject(err)
+            }
+            return
+          }
           // Steam throttles these endpoints; it reports pacing as explicit
           // 429s, or as a generic "HTTP error <status>" when the (empty)
           // body fails to parse — 400 and 500 are the common throttling
@@ -315,7 +326,7 @@ export function httpJson(method: 'get' | 'post', uri: string, extra: Record<stri
           reject(err)
           return
         }
-        resolve({ status: response.statusCode, body: body as Record<string, unknown> })
+        resolve({ status: (response as { statusCode: number }).statusCode, body: body as Record<string, unknown> })
       }
       if (method === 'get') {
         community.httpRequestGet(uri, options, callback, 'skin-hq')
@@ -583,74 +594,6 @@ function persistItems(items: InventoryItem[]): void {
       updated_at: new Date().toISOString(),
     })),
   )
-}
-
-const INVENTORY_PAGE_SIZE = 75
-
-interface InventoryPage {
-  assets: Array<{ assetid: string; classid: string; instanceid: string; amount: string }>
-  descriptions: Array<{
-    classid: string
-    instanceid: string
-    name?: string
-    market_hash_name?: string
-    type?: string
-    icon_url?: string
-    tradable?: boolean
-    marketable?: boolean
-    market_marketable_restriction?: number
-  }>
-  more_items?: boolean
-  more_start_assetid?: string
-}
-
-export async function getPublicInventory(steamid: string): Promise<{ items: InventoryItem[]; total: number }> {
-  if (!/^\d{17}$/.test(steamid)) throw new Error('Invalid steamid64')
-  const items: InventoryItem[] = []
-  let startAssetid: string | undefined
-  for (let page = 0; page < 50; page++) {
-    const qs: Record<string, unknown> = { l: 'english', count: INVENTORY_PAGE_SIZE }
-    if (startAssetid) qs.start_assetid = startAssetid
-    const text = await fetchText(`https://steamcommunity.com/inventory/${steamid}/${APPID}/${CONTEXTID}`, qs)
-    const body = JSON.parse(text) as InventoryPage
-    const descById = new Map<string, InventoryPage['descriptions'][number]>()
-    for (const d of body.descriptions ?? []) descById.set(`${d.classid}_${d.instanceid}`, d)
-    const pageItems: InventoryItem[] = (body.assets ?? []).map((a, i) => {
-      const d = descById.get(`${a.classid}_${a.instanceid}`)
-      return {
-        assetid: a.assetid,
-        contextid: CONTEXTID,
-        name: d?.market_hash_name ?? d?.name ?? 'Unknown',
-        market_hash_name: d?.market_hash_name ?? '',
-        type: d?.type ?? '',
-        icon_url: d?.icon_url ?? '',
-        tradable: d?.tradable ?? false,
-        marketable: d?.marketable ?? false,
-        marketable_restriction: d?.market_marketable_restriction != null ? String(d.market_marketable_restriction) : undefined,
-        pos: items.length + i,
-      }
-    })
-    items.push(...pageItems)
-    if (!body.more_items) break
-    startAssetid = body.more_start_assetid
-    await sleep(300)
-  }
-  persistItems(items)
-  return { items, total: items.length }
-}
-
-export async function resolveSteamID64(input: string): Promise<string> {
-  let ref = input.trim().replace(/\/+$/, '')
-  ref = ref.replace(/^https?:\/\/steamcommunity\.com\//, '')
-  const profiles = ref.match(/^profiles\/(\d{17})$/)
-  if (profiles) return profiles[1]
-  const vanity = ref.replace(/^id\//, '')
-  if (/^\d{17}$/.test(vanity)) return vanity
-  if (!vanity) throw new Error('Provide a Steam profile URL, custom URL, or steamid64')
-  const xml = await fetchText(`https://steamcommunity.com/id/${encodeURIComponent(vanity)}/`, { xml: '1' })
-  const m = xml.match(/<steamID64>(\d{17})<\/steamID64>/)
-  if (!m) throw new Error(`Could not resolve Steam profile '${vanity}'`)
-  return m[1]
 }
 
 export interface SteamPriceOverview {
