@@ -73,10 +73,10 @@ Dockerfile) so later phases land in an already-proven container.
   count. Logged-in pulls get far better treatment → the login path is the
   primary inventory source; public inventory is a best-effort convenience
   with 429 backoff. `fetchText` retries 429 with exponential backoff.
-- Public-inventory feature (Phase 0 spike bonus): `/api/steamid` resolves
-  profile URL / custom URL / steamid64, `/api/inventory?steamid=` pulls a
-  public inventory anonymously — works only while Steam allows anonymous
-  reads from the IP.
+- Public-inventory feature (Phase 0 spike bonus): `/api/steamid` resolved
+  profile URL / custom URL / steamid64, `/api/inventory?steamid=` pulled a
+  public inventory anonymously. Removed (#66): it stored the other account's
+  items in your own `items` table, so they showed up in your grid as sellable.
 
 ## Phase 1 — Read core
 
