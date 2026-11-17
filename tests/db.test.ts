@@ -183,3 +183,14 @@ describe('my_listings', () => {
     expect(() => db.deleteMyListing('nope')).not.toThrow()
   })
 })
+describe('pruneItemsExcept', () => {
+  it('drops items that left the inventory, but keeps pending sells and listed items', () => {
+    db.upsertItems(['KEEP', 'GONE', 'PENDING', 'LISTED'].map((assetid) => item({ assetid })))
+    db.upsertPendingListing({ assetid: 'PENDING', market_hash_name: null, price_cents: 100 })
+    db.replaceMyListings([{ listingid: '9', assetid: 'LISTED', market_hash_name: 'x', price_cents: 100, updated_at: 'now' }])
+
+    expect(db.pruneItemsExcept(['KEEP'])).toBeGreaterThanOrEqual(1)
+    for (const id of ['KEEP', 'PENDING', 'LISTED']) expect(db.getItem(id)).toBeDefined()
+    expect(db.getItem('GONE')).toBeUndefined()
+  })
+})
