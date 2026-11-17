@@ -72,25 +72,11 @@ app.post('/api/auth/logout', (_req, res) => {
   res.json(steam.logout())
 })
 
-app.get('/api/inventory', async (req, res) => {
-  const steamid = typeof req.query.steamid === 'string' ? req.query.steamid : undefined
+app.get('/api/inventory', async (_req, res) => {
   try {
-    res.json(steamid ? await steam.getPublicInventory(steamid) : await steam.getInventory())
+    res.json(await steam.getInventory())
   } catch (err) {
     res.status(401).json({ error: (err as Error).message })
-  }
-})
-
-app.get('/api/steamid', async (req, res) => {
-  const input = typeof req.query.input === 'string' ? req.query.input : ''
-  if (!input) {
-    res.status(400).json({ error: 'input query param is required' })
-    return
-  }
-  try {
-    res.json({ steamid64: await steam.resolveSteamID64(input) })
-  } catch (err) {
-    res.status(400).json({ error: (err as Error).message })
   }
 })
 
