@@ -183,6 +183,7 @@ describe('my_listings', () => {
     expect(() => db.deleteMyListing('nope')).not.toThrow()
   })
 })
+
 describe('pruneItemsExcept', () => {
   it('drops items that left the inventory, but keeps pending sells and listed items', () => {
     db.upsertItems(['KEEP', 'GONE', 'PENDING', 'LISTED'].map((assetid) => item({ assetid })))
@@ -192,5 +193,16 @@ describe('pruneItemsExcept', () => {
     expect(db.pruneItemsExcept(['KEEP'])).toBeGreaterThanOrEqual(1)
     for (const id of ['KEEP', 'PENDING', 'LISTED']) expect(db.getItem(id)).toBeDefined()
     expect(db.getItem('GONE')).toBeUndefined()
+  })
+})
+
+describe('latestPriceSnapshots', () => {
+  it('finds the newest snapshot per item through the index, not a group rescan', () => {
+    const plan = db.db
+      .prepare(
+        `EXPLAIN QUERY PLAN SELECT MAX(fetched_at) FROM price_snapshots WHERE market_hash_name = ? AND provider = ?`,
+      )
+      .all('x', 'steam') as Array<{ detail: string }>
+    expect(plan.map((p) => p.detail).join('\n')).toMatch(/COVERING INDEX idx_price_snapshots_latest/)
   })
 })

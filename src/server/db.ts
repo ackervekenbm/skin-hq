@@ -47,8 +47,12 @@ db.exec(`
       note TEXT,
       fetched_at TEXT NOT NULL
     );
-    CREATE INDEX IF NOT EXISTS idx_price_snapshots_hash
-      ON price_snapshots (market_hash_name, provider);
+    -- fetched_at in the index turns latestPriceSnapshots' per-row MAX() into a
+    -- lookup; without it the grid query grows with the square of the history
+    -- (minutes after months of syncs). Replaces the (hash, provider) index.
+    CREATE INDEX IF NOT EXISTS idx_price_snapshots_latest
+      ON price_snapshots (market_hash_name, provider, fetched_at);
+    DROP INDEX IF EXISTS idx_price_snapshots_hash;
     CREATE TABLE IF NOT EXISTS my_listings (
       listingid TEXT PRIMARY KEY,
       assetid TEXT,
