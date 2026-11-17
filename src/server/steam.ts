@@ -302,8 +302,19 @@ export function httpJson(method: 'get' | 'post', uri: string, extra: Record<stri
   return new Promise<JsonResponse>((resolve, reject) => {
     const attempt = (remaining: number, delay: number): void => {
       const options = { json: true, ...extra }
-      const callback = (err: Error | null, response: { statusCode: number }, body: unknown) => {
+      const callback = (err: Error | null, response: { statusCode: number } | undefined, body: unknown) => {
         if (err) {
+          if (method === 'post') {
+            // Sell/cancel are not idempotent, so never retry them. Steam refuses
+            // them with a non-2xx status and a JSON { success: false, message }:
+            // hand that back so the caller can show Steam's own reason.
+            if (response && response.statusCode >= 400 && body && typeof body === 'object') {
+              resolve({ status: response.statusCode, body: body as Record<string, unknown> })
+            } else {
+              reject(err)
+            }
+            return
+          }
           // Steam throttles these endpoints; it reports pacing as explicit
           // 429s, or as a generic "HTTP error <status>" when the (empty)
           // body fails to parse — 400 and 500 are the common throttling
@@ -315,7 +326,7 @@ export function httpJson(method: 'get' | 'post', uri: string, extra: Record<stri
           reject(err)
           return
         }
-        resolve({ status: response.statusCode, body: body as Record<string, unknown> })
+        resolve({ status: (response as { statusCode: number }).statusCode, body: body as Record<string, unknown> })
       }
       if (method === 'get') {
         community.httpRequestGet(uri, options, callback, 'skin-hq')
