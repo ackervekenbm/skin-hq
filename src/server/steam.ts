@@ -2,7 +2,7 @@ import SteamCommunity from 'steamcommunity'
 import type { CEconItem } from 'steamcommunity'
 import { EAuthSessionGuardType, EAuthTokenPlatformType, LoginSession } from 'steam-session'
 import type { StartSessionResponse } from 'steam-session/dist/interfaces-external'
-import { clearSession, getItem, loadSession, saveSession, upsertItems } from './db'
+import { clearSession, getItem, loadSession, pruneItemsExcept, saveSession, upsertItems } from './db'
 import { decodeSsrOrderbook } from './orderbook'
 import { attachedFromDescriptions, inspectFromProperties, type AssetPropertyEntry, type OwnItemFloat } from './floats'
 
@@ -408,11 +408,13 @@ export async function getInventory(): Promise<{ items: InventoryItem[]; total: n
   const inv2 = await fetchContext(CONTEXTID)
   for (const item of inv2) byId.set(item.assetid, mapItem(item, CONTEXTID))
 
+  let sawEverything = false
   try {
     // Context 16 (currently listed/on-market items) is an enhancement — a
     // transient failure here must not fail the whole inventory sync.
     const inv16 = await fetchContext('16')
     for (const item of inv16) if (!byId.has(item.assetid)) byId.set(item.assetid, mapItem(item, '16'))
+    sawEverything = true
   } catch (err) {
     console.warn('[inventory] context 16 (listed items) fetch failed, continuing with context 2 only:', (err as Error).message)
   }
@@ -421,6 +423,12 @@ export async function getInventory(): Promise<{ items: InventoryItem[]; total: n
 
   const items = [...byId.values()]
   persistItems(items)
+  // Only a read that saw both contexts knows what left. An empty answer is
+  // treated as a Steam glitch, never as "everything is gone".
+  if (sawEverything && items.length > 0) {
+    const pruned = pruneItemsExcept(items.map((i) => i.assetid))
+    if (pruned > 0) console.info(`[inventory] removed ${pruned} item(s) no longer in the inventory`)
+  }
   return { items, total: items.length }
 }
 

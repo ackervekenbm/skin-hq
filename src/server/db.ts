@@ -153,6 +153,21 @@ export function upsertItems(items: ItemRow[]): void {
   tx(items)
 }
 
+// Drop items that are no longer in the inventory (traded, consumed, sold), so
+// the grid stops offering them. Assets with a pending sell or a listing row are
+// kept: Steam can hide a pending sell from both contexts, and listings.ts owns
+// those rows.
+export function pruneItemsExcept(assetids: string[]): number {
+  return db
+    .prepare(
+      `DELETE FROM items
+       WHERE assetid NOT IN (SELECT value FROM json_each(?))
+         AND assetid NOT IN (SELECT assetid FROM pending_listings)
+         AND assetid NOT IN (SELECT assetid FROM my_listings WHERE assetid IS NOT NULL)`,
+    )
+    .run(JSON.stringify(assetids)).changes
+}
+
 export function listItems(): ItemRow[] {
   return db.prepare('SELECT * FROM items ORDER BY updated_at DESC').all() as ItemRow[]
 }
