@@ -23,6 +23,9 @@ judging impact:
   listings (a new listing still needs a confirmation in the Steam Mobile app).
   Keep it on your own machine or home network; for anything reachable from
   outside, put it behind a reverse proxy with authentication and HTTPS.
+- **Other websites can't use it through your browser.** The app refuses
+  changes (sell, cancel, log out, sync) that a page on another site tries to
+  send through your browser.
 - **Steam credentials** are sent only to Steam; the password is never stored.
 - **Session cookies** are encrypted at rest with `SKINHQ_SESSION_KEY`, which
   lives only in the environment (`.env`), never in the repo or the image.
