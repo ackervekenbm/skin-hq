@@ -9,6 +9,14 @@ updates:
       npm:
         patterns:
           - '*'
+    ignore:
+      # TypeScript 7 is the native-compiler line; typescript-eslint still only
+      # supports typescript <6.1.0 (peer range), so the weekly group is
+      # uninstallable when it pulls TS 7. We still want 6.0.x patches, so block
+      # only the major. Revisit when typescript-eslint supports TS 7 (see #62).
+      - dependency-name: 'typescript'
+        update-types:
+          - 'version-update:semver-major'
   - package-ecosystem: github-actions
     directory: /
     schedule:
