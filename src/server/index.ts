@@ -8,8 +8,16 @@ import { listItems } from './db'
 import { clearPendingSell, forgetListing, markPendingSell, refreshListings } from './listings'
 import { buildGrid, startAutoSync, sync } from './sync'
 import { buildCompare } from './compare'
+import { isCrossSiteWrite, isSteamId } from './guard'
 
 const app = express()
+app.use('/api', (req, res, next) => {
+  if (isCrossSiteWrite(req.method, (name) => req.get(name))) {
+    res.status(403).json({ error: 'Cross-site or non-JSON write refused' })
+    return
+  }
+  next()
+})
 app.use(express.json())
 
 startAutoSync()
@@ -134,9 +142,9 @@ app.get('/api/price', async (req, res) => {
 })
 
 app.post('/api/sell', async (req, res) => {
-  const { assetid, contextid, price } = req.body as { assetid?: string; contextid?: string; price?: number }
-  if (!assetid || typeof price !== 'number' || price <= 0) {
-    res.status(400).json({ error: 'assetid and price (in cents) are required' })
+  const { assetid, contextid, price } = req.body as { assetid?: unknown; contextid?: unknown; price?: unknown }
+  if (!isSteamId(assetid) || (contextid != null && !isSteamId(contextid)) || typeof price !== 'number' || !Number.isInteger(price) || price <= 0) {
+    res.status(400).json({ error: 'assetid and a whole, positive price in cents are required' })
     return
   }
   // A retried sell supersedes any earlier attempt for the same asset, so drop
@@ -162,15 +170,17 @@ app.post('/api/sell', async (req, res) => {
   if (!result.needs_mobile_confirmation) {
     // Steam listed it outright, so the listing should already exist — confirm
     // immediately instead of waiting out the backoff.
-void refreshListings().catch((err) => console.warn('[listings] post-cancel refresh failed:', err.message))
+    // refreshListings never rejects: failures come back as { ok: false }.
+    void refreshListings()
   }
   res.json({ ...result, pending: true })
 })
 
 app.post('/api/cancel', async (req, res) => {
-  const { listingid } = req.body as { listingid?: string }
-  if (!listingid) {
-    res.status(400).json({ error: 'listingid is required' })
+  const { listingid } = req.body as { listingid?: unknown }
+  // Goes into the removelisting/<id>/ URL path, so digits only.
+  if (!isSteamId(listingid)) {
+    res.status(400).json({ error: 'a numeric listingid is required' })
     return
   }
   let result: { success: boolean }
