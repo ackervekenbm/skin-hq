@@ -25,7 +25,8 @@ vi.mock('../src/server/db', () => ({
 
 const { sync } = await import('../src/server/sync')
 
-const failure = (over: Partial<Extract<ListingsRefresh, { ok: false }>> = {}): ListingsRefresh => ({
+type Failure = Extract<ListingsRefresh, { ok: false }>
+const failure = (over: Partial<Failure> = {}): Failure => ({
   ok: false,
   keptPrevious: true,
   error: 'Steam returned no listings but we previously had some — kept previous data',
