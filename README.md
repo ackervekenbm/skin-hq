@@ -18,6 +18,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
   a "awaiting your confirmation in Steam Mobile" flow.
 - **SQLite cache** — everything synced by paced background jobs; the UI
   never blocks on live Steam calls.
+- **About** — Settings shows which build is running (commit and build time)
+  with links to the source, the issue tracker, the author and the license.
 
 ## Requirements
 

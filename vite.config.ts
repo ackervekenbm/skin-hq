@@ -1,5 +1,8 @@
 import { defineConfig } from 'vite'
+import { readFileSync } from 'node:fs'
 import react from '@vitejs/plugin-react'
+
+const pkg = JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')) as { license?: string }
 
 export default defineConfig({
   server: {
@@ -22,6 +25,8 @@ export default defineConfig({
     __BUILD_SHA__: JSON.stringify(process.env.COMMIT_SHA || 'dev'),
     __BUILD_TIME__: JSON.stringify(process.env.BUILD_TIME || ''),
     __REPO__: JSON.stringify(process.env.GITHUB_REPOSITORY || 'ackervekenbm/skin-hq'),
+    // package.json's `license`; empty ("not chosen yet" in Settings) while none is chosen.
+    __LICENSE__: JSON.stringify(pkg.license ?? ''),
   },
   plugins: [react()],
 })

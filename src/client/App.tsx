@@ -1305,31 +1305,54 @@ export default function App() {
               </div>
             </section>
 
-            <p className="settings-build">
-              {__BUILD_SHA__ === 'dev' ? (
-                'development build'
-              ) : (
-                <>
-                  <a href={`https://github.com/${__REPO__}/commit/${__BUILD_SHA__}`} target="_blank" rel="noopener noreferrer">
-                    {__BUILD_SHA__.slice(0, 7)}
-                  </a>
-                  {__BUILD_TIME__ ? (
+            <section className="settings-sec">
+              <span className="settings-heading">About</span>
+              <dl className="settings-about">
+                <dt>Build</dt>
+                <dd>
+                  {__BUILD_SHA__ === 'dev' ? (
+                    'development build'
+                  ) : (
                     <>
-                      {' · '}
-                      {new Date(__BUILD_TIME__).toLocaleDateString([], {
-                        day: 'numeric',
-                        month: 'short',
-                        year: 'numeric',
-                      })}
+                      <a href={`https://github.com/${__REPO__}/commit/${__BUILD_SHA__}`} target="_blank" rel="noopener noreferrer">
+                        {__BUILD_SHA__.slice(0, 7)}
+                      </a>
+                      {__BUILD_TIME__
+                        ? ` · ${new Date(__BUILD_TIME__).toLocaleString([], { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}`
+                        : null}
                     </>
-                  ) : null}
-                  {' · '}
+                  )}
+                </dd>
+                <dt>Source</dt>
+                <dd>
+                  <a href={`https://github.com/${__REPO__}`} target="_blank" rel="noopener noreferrer">
+                    {__REPO__}
+                  </a>
+                </dd>
+                <dt>Feedback</dt>
+                <dd>
                   <a href={`https://github.com/${__REPO__}/issues`} target="_blank" rel="noopener noreferrer">
                     Report an issue
                   </a>
-                </>
-              )}
-            </p>
+                </dd>
+                <dt>Made by</dt>
+                <dd>
+                  <a href={`https://github.com/${__REPO__.split('/')[0]}`} target="_blank" rel="noopener noreferrer">
+                    {__REPO__.split('/')[0]}
+                  </a>
+                </dd>
+                <dt>License</dt>
+                <dd>
+                  {__LICENSE__ ? (
+                    <a href={`https://github.com/${__REPO__}/blob/main/LICENSE`} target="_blank" rel="noopener noreferrer">
+                      {__LICENSE__}
+                    </a>
+                  ) : (
+                    'not chosen yet'
+                  )}
+                </dd>
+              </dl>
+            </section>
           </div>
         </div>
       )}

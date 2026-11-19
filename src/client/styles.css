@@ -1116,24 +1116,29 @@ input::placeholder {
   line-height: 1;
 }
 
-.settings-build {
+.settings-about {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 6px 16px;
   margin: 0;
-  padding-top: 16px;
-  border-top: 1px solid var(--border);
-  text-align: center;
-  font-size: 11px;
-  color: var(--muted);
-  line-height: 1.6;
+  font-size: 12px;
+  line-height: 1.5;
 }
 
-.settings-build a {
+.settings-about dt {
   color: var(--muted);
+}
+
+.settings-about dd {
+  margin: 0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.settings-about a {
+  color: var(--text);
   text-decoration: underline;
   text-underline-offset: 2px;
-}
-
-.settings-build a:hover {
-  color: var(--text);
 }
 
 .sell-row {
