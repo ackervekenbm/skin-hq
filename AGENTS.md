@@ -126,6 +126,11 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   effort, contexts 2 + 16) and stores them on `items.own_float/*`.
 - `src/client/` — React UI. The Phase 0 spike harness (login, inventory,
   prices, sell/cancel) doubles as the seed of the Phase 1 inventory grid.
+  Settings ends with an **About** section built from constants Vite defines
+  (`vite.config.ts`, declared in `src/vite-env.d.ts`): `__BUILD_SHA__`,
+  `__BUILD_TIME__`, `__REPO__` from the image build's `COMMIT_SHA` /
+  `BUILD_TIME` / `GITHUB_REPOSITORY` args ("development build" without them)
+  and `__LICENSE__` from `package.json`'s `license` ("not chosen yet" while empty).
 - `src/types/steamcommunity.d.ts` — ambient declarations for
   `steamcommunity@3.50.3` (ships no types). Declare only what we use.
 - Vite dev proxies `/api` → `http://127.0.0.1:3000`; `npm run dev` runs the
