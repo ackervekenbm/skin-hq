@@ -25,6 +25,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
   plus the newest), so the file stays small.
 - **About** — Settings shows which build is running (commit and build time)
   with links to the source, the issue tracker, the author and the license.
+- **Home screen** — add it to your phone's home screen (Share → Add to Home
+  Screen on iPhone): it gets its own icon and opens full screen.
 
 ## Requirements
 
@@ -82,6 +84,7 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
 | `npm run build` | Type-check, lint, production build (client `dist/` + server `dist-server/`) |
 | `npm run start` | Run the built server (serves `dist/` + `/api`) |
 | `npm run lint` / `lint:fix` | ESLint (flat config; js + typescript-eslint + react-hooks + react-refresh + node globals for server) |
+| `npm run icons` | Re-render the app icons in `public/` from `scripts/gen-icons.mjs` (commit the PNGs) |
 
 ## Project structure
 
@@ -92,6 +95,8 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
 │   └── dependabot.yml             # weekly dependency-update PRs
 ├── eslint.config.js / tsconfig.json / tsconfig.server.json / vite.config.ts
 ├── index.html                     # app shell
+├── public/                        # favicon, home-screen icons, web app manifest
+├── scripts/gen-icons.mjs          # renders the icons (`npm run icons`)
 ├── docs/plan.md                   # living plan — updated as the app evolves
 ├── docs/deploy/                   # deployment guides, one per route (image, OMV, source, Node) + HTTPS, operations, troubleshooting
 └── src/

@@ -128,6 +128,10 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   with `@csfloat/cs2-inspect-serializer` into exact float/paint-seed/
   stickers/keychains. `steam.ts` attaches these in `getInventory()` (best-
   effort, contexts 2 + 16) and stores them on `items.own_float/*`.
+- `public/` — favicon, apple-touch-icon, manifest icons and
+  `manifest.webmanifest` (no service worker). The PNGs are rendered by
+  `scripts/gen-icons.mjs` (`npm run icons`, dev dependency `sharp`, which
+  loads its prebuilt `@img/*` binary without an install script) and committed.
 - `src/client/` — React UI. The Phase 0 spike harness (login, inventory,
   prices, sell/cancel) doubles as the seed of the Phase 1 inventory grid.
   Settings ends with an **About** section built from constants Vite defines
