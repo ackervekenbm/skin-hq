@@ -368,13 +368,37 @@ export default function App() {
   function openDetail(item: GridItem) {
     setCompare(null)
     setDetail(item)
+    openHash.current = item.market_hash_name
     void loadCompare(item.market_hash_name)
   }
 
   const closeDetail = useCallback(() => {
     setDetail(null)
     setCompare(null)
+    openHash.current = null
   }, [])
+
+  // Which item the detail view shows, so a refresh that finishes after you
+  // moved on doesn't paint its prices into another item.
+  const openHash = useRef<string | null>(null)
+  const [refreshingPrices, setRefreshingPrices] = useState(false)
+  async function refreshItemPrices(item: GridItem) {
+    setRefreshingPrices(true)
+    try {
+      const r = await api<{ compare: CompareRow | null; errors: string[] }>('/api/price/refresh', {
+        method: 'POST',
+        body: JSON.stringify({ hash: item.market_hash_name }),
+      })
+      if (openHash.current === item.market_hash_name) setCompare(r.compare)
+      for (const e of r.errors) pushLog('warn', `prices ${item.name}: ${e}`)
+      if (r.errors.length === 0) pushLog('ok', `prices ${item.name}: refreshed`)
+      await refreshGrid({ silent: true })
+    } catch (err) {
+      pushLog('err', `prices ${item.name}: ${(err as Error).message}`)
+    } finally {
+      setRefreshingPrices(false)
+    }
+  }
 
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', theme)
@@ -847,8 +871,21 @@ export default function App() {
         </div>
 
         <div className="detail-body">
+          <div className="detail-refresh">
+            <span className="muted">
+              {compare?.steam.fetched_at ? `Prices from ${relTime(compare.steam.fetched_at)}` : 'No prices fetched yet'}
+            </span>
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => void refreshItemPrices(item)}
+              disabled={refreshingPrices}
+              title="Fetch this item's prices from Steam and CSFloat now"
+            >
+              {refreshingPrices ? 'Refreshing…' : 'Refresh prices'}
+            </button>
+          </div>
           {!compare ? (
-            <p className="muted">{compareLoading ? 'Fetching live prices…' : 'No live price data for this item yet.'}</p>
+            <p className="muted">{compareLoading ? 'Loading prices…' : 'No price data for this item yet.'}</p>
           ) : (
             <>
               {compare.bestVenue && compare.deltaPercent != null && (

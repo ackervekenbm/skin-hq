@@ -196,10 +196,9 @@ input::placeholder {
 
 .appbar h1::before {
   content: "";
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
-  background: var(--brand-grad);
+  width: 22px;
+  height: 22px;
+  background: url("/favicon.svg") center / contain no-repeat;
 }
 
 .appbar-right {
@@ -1041,8 +1040,7 @@ input::placeholder {
   display: inline-block;
   width: 54px;
   height: 54px;
-  border-radius: 14px;
-  background: var(--brand-grad);
+  background: url("/favicon.svg") center / contain no-repeat;
   margin-bottom: 12px;
 }
 
@@ -1461,4 +1459,12 @@ footer {
     animation: none !important;
     transition: none !important;
   }
+}
+.detail-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
 }

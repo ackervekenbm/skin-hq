@@ -7,7 +7,7 @@ import {
   type PriceSnapshotRow,
 } from './db'
 import { pendingByAssetId, refreshListings } from './listings'
-import type { ItemPrice } from './price'
+import type { ItemPrice, PriceProvider } from './price'
 import { providers } from './price'
 import * as steam from './steam'
 
@@ -332,12 +332,7 @@ class SyncEngine {
       this.current++
       let hashOk = false
       for (const provider of providers) {
-        let res: ItemPrice
-        try {
-          res = await provider.getItem(hash)
-        } catch (err) {
-          res = { provider: provider.name, currency: 'EUR', lowest_cents: null, error: (err as Error).message }
-        }
+        const res = await fetchPrice(provider, hash)
         if (res.error) {
           this.pushError(`${provider.name} ${hash}: ${res.error}`)
           console.warn(`[sync] ${provider.name} ${hash} failed`, res.error)
@@ -356,21 +351,7 @@ class SyncEngine {
           consecutive429 = 0
           if (provider.name === 'steam') hashOk = true
         }
-        insertPriceSnapshot({
-          market_hash_name: hash,
-          provider: provider.name,
-          lowest_cents: res.lowest_cents,
-          median_cents: res.median_cents ?? null,
-          volume: res.volume,
-          sell_count: res.sell_count,
-          buy_count: res.buy_count,
-          highest_buy_cents: res.highest_buy_cents,
-          float_value: res.float_value,
-          paint_seed: res.paint_seed,
-          stickers: res.stickers ? JSON.stringify(res.stickers) : null,
-          had_error: res.error ? 1 : 0,
-          note: res.error,
-        })
+        storePrice(hash, provider.name, res)
       }
       if (aborted) break
       if (hashOk) okCount++
@@ -386,6 +367,48 @@ class SyncEngine {
 }
 
 export const sync = new SyncEngine()
+
+/** One provider's price for one item; a thrown error becomes an errored result. */
+async function fetchPrice(provider: PriceProvider, hash: string): Promise<ItemPrice> {
+  try {
+    return await provider.getItem(hash)
+  } catch (err) {
+    return { provider: provider.name, currency: 'EUR', lowest_cents: null, error: (err as Error).message }
+  }
+}
+
+function storePrice(hash: string, provider: string, res: ItemPrice): void {
+  insertPriceSnapshot({
+    market_hash_name: hash,
+    provider,
+    lowest_cents: res.lowest_cents,
+    median_cents: res.median_cents ?? null,
+    volume: res.volume,
+    sell_count: res.sell_count,
+    buy_count: res.buy_count,
+    highest_buy_cents: res.highest_buy_cents,
+    float_value: res.float_value,
+    paint_seed: res.paint_seed,
+    stickers: res.stickers ? JSON.stringify(res.stickers) : null,
+    had_error: res.error ? 1 : 0,
+    note: res.error,
+  })
+}
+
+/**
+ * Fetches and stores fresh prices for one item from every provider, outside
+ * the scheduled sync (the "Refresh prices" button in the detail view).
+ * Returns the provider errors, empty when everything answered.
+ */
+export async function refreshItemPrices(hash: string): Promise<string[]> {
+  const errors: string[] = []
+  for (const provider of providers) {
+    const res = await fetchPrice(provider, hash)
+    storePrice(hash, provider.name, res)
+    if (res.error) errors.push(`${provider.name}: ${res.error}`)
+  }
+  return errors
+}
 
 // Schedules the server-side auto-sync. First run shortly after boot (so a
 // restored session starts refreshing on its own), then every AUTO_SYNC_MIN.

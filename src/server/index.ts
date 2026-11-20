@@ -3,10 +3,9 @@ import { existsSync } from 'node:fs'
 import path from 'node:path'
 import './db'
 import * as steam from './steam'
-import { comparePrices } from './price'
 import { listItems } from './db'
 import { clearPendingSell, forgetListing, markPendingSell, refreshListings } from './listings'
-import { buildGrid, startAutoSync, sync } from './sync'
+import { buildGrid, refreshItemPrices, startAutoSync, sync } from './sync'
 import { buildCompare } from './compare'
 import { isAllowedHost, isCrossSiteWrite, isSteamId, parseAllowedHosts } from './guard'
 
@@ -122,17 +121,21 @@ app.get('/api/mylistings', async (_req, res) => {
   }
 })
 
-app.get('/api/price', async (req, res) => {
-  const hash = typeof req.query.hash === 'string' ? req.query.hash : ''
-  if (!hash) {
-    res.status(400).json({ error: 'hash query param is required' })
+// Fresh prices for one item, on demand, stored like a sync would store them.
+// Only items in your inventory: this must not become a way to make the server
+// fetch arbitrary market pages.
+app.post('/api/price/refresh', async (req, res) => {
+  const { hash } = req.body as { hash?: unknown }
+  if (typeof hash !== 'string' || !hash) {
+    res.status(400).json({ error: 'hash is required' })
     return
   }
-  try {
-    res.json({ hash, providers: await comparePrices(hash) })
-  } catch (err) {
-    res.status(500).json({ error: (err as Error).message })
+  if (!listItems().some((i) => i.market_hash_name === hash)) {
+    res.status(404).json({ error: 'not in your inventory' })
+    return
   }
+  const errors = await refreshItemPrices(hash)
+  res.json({ compare: buildCompare(hash), errors })
 })
 
 app.post('/api/sell', async (req, res) => {

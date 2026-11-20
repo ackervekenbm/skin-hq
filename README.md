@@ -16,6 +16,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
   restricted items.
 - **Price comparison** — per item: Steam lowest + volume, buy-order depth,
   and third-party listings (net after fees) on the pluggable provider.
+  **Refresh prices** in an item's detail view fetches that one item right
+  away instead of waiting for the next sync.
 - **Listing manager** — your active Steam Market listings; sell/cancel with
   a "awaiting your confirmation in Steam Mobile" flow.
 - **SQLite cache** — everything synced by paced background jobs; the UI
@@ -23,6 +25,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
   plus the newest), so the file stays small.
 - **About** — Settings shows which build is running (commit and build time)
   with links to the source, the issue tracker, the author and the license.
+- **Home screen** — add it to your phone's home screen (Share → Add to Home
+  Screen on iPhone): it gets its own icon and opens full screen.
 
 ## Requirements
 
@@ -80,6 +84,7 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
 | `npm run build` | Type-check, lint, production build (client `dist/` + server `dist-server/`) |
 | `npm run start` | Run the built server (serves `dist/` + `/api`) |
 | `npm run lint` / `lint:fix` | ESLint (flat config; js + typescript-eslint + react-hooks + react-refresh + node globals for server) |
+| `npm run icons` | Re-render the app icons in `public/` from `scripts/gen-icons.mjs` (commit the PNGs) |
 
 ## Project structure
 
@@ -90,6 +95,8 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
 │   └── dependabot.yml             # weekly dependency-update PRs
 ├── eslint.config.js / tsconfig.json / tsconfig.server.json / vite.config.ts
 ├── index.html                     # app shell
+├── public/                        # favicon, home-screen icons, web app manifest
+├── scripts/gen-icons.mjs          # renders the icons (`npm run icons`)
 ├── docs/plan.md                   # living plan — updated as the app evolves
 ├── docs/deploy/                   # deployment guides, one per route (image, OMV, source, Node) + HTTPS, operations, troubleshooting
 └── src/
