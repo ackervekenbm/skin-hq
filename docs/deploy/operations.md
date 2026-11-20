@@ -19,6 +19,7 @@ key; leaving one out, or empty, keeps the default.
 | `SKINHQ_PROBE_TTL_MS` | `600000` (10 min) | How often an idle app checks whether Steam still accepts the session |
 | `SKINHQ_DECLINE_GRACE_MS` | `90000` (90 s) | How long a sell waits for your phone confirmation before the app asks Steam whether it went through |
 | `SKINHQ_PENDING_TTL_MS` | `1800000` (30 min) | After this, a sell that was never confirmed or declined stops blocking the item |
+| `SKINHQ_RELIST_GAP_MS` | `1500` | Pause between cancelling the old listing and placing the new one when you relist |
 | `FX_EUR_USD` | `1.1` | How many USD one EUR buys, used to compare Steam's euro prices with CSFloat's dollar prices |
 | `HOST` | `127.0.0.1` (`0.0.0.0` in the image) | Address the server listens on |
 | `PORT` | `3000` | Port the server listens on. Leave it alone in Docker: the healthcheck probes `3000` |
