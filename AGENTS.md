@@ -113,6 +113,8 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
 - `src/server/guard.ts` — the API has no login, so every POST under `/api`
   must be JSON and must not carry a cross-site `Sec-Fetch-Site`; this keeps
   other websites in the same browser from selling, cancelling or logging out.
+  Every request must also carry a known `Host` (`isAllowedHost`: localhost,
+  IP literals, `SKINHQ_ALLOWED_HOSTS`), which closes DNS rebinding.
   Ids sent on to Steam are digits only (`isSteamId`).
 - `src/server/orderbook.ts` — pure decoder for the order book that Steam's
   React SSR listing page embeds in its `renderContext` payload (the classic

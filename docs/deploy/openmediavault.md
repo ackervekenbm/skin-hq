@@ -30,6 +30,7 @@ The [prebuilt image](docker-image.md), run from OMV's web UI. No SSH needed.
          SKINHQ_SESSION_KEY: ${SKINHQ_SESSION_KEY:?set SKINHQ_SESSION_KEY in Environment}
          # Optional: blank uses the app's default (see operations.md#settings).
          CSFLOAT_API_KEY: ${CSFLOAT_API_KEY:-}
+         SKINHQ_ALLOWED_HOSTS: ${SKINHQ_ALLOWED_HOSTS:-}
          SYNC_INTERVAL_MIN: ${SYNC_INTERVAL_MIN:-}
        volumes:
          - CHANGE_TO_COMPOSE_DATA_PATH/skin-hq:/app/data

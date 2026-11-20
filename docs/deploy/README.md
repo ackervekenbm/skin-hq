@@ -35,9 +35,10 @@ firewall rules bypass ufw and firewalld. When a reverse proxy on the same host
 is the only thing that should reach the app, publish it on loopback only:
 `-p 127.0.0.1:8090:3000`. Bare Node listens on `127.0.0.1` by default.
 
-The app does refuse writes (sell, cancel, sign out) sent by another website
-open in the same browser, so a page elsewhere can't drive it. That doesn't
-help against someone who opens SkinHQ itself.
+The app refuses requests under a host name it doesn't know, and writes (sell,
+cancel, sign out) sent by another website open in the same browser, so a page
+elsewhere can't drive it. That doesn't help against someone who opens SkinHQ
+itself.
 
 ## The contract every route shares
 
@@ -48,6 +49,7 @@ help against someone who opens SkinHQ itself.
 | Data | `DATA_DIR` (default `./data`, `/app/data` in the image) holds `skin-hq.db`. The only state |
 | Session key | `SKINHQ_SESSION_KEY`, **required** in production: it encrypts the stored Steam session. Make one with `openssl rand -hex 32` |
 | Web app files | `dist/`, next to where the server is started |
+| Host names | `localhost` and IP addresses always work; any other name you open it through goes in `SKINHQ_ALLOWED_HOSTS` ([https.md](https.md#rules-for-any-proxy)) |
 | Health | `GET /api/health` → `200 {"ok":true,...}` |
 | Prerequisites | Node **22+** (the image ships it) on a **64-bit** `x64`/`arm64` OS; nothing is compiled during install |
 
