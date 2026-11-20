@@ -10,10 +10,12 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
 
 ## Features
 
-- **Inventory view** — every CS2 item with name, icon, wear/float, trade and
-  market status. Search by name, wear (also FN/MW/FT/WW/BS), rarity or
-  attached sticker/charm, and show only sellable, listed, awaiting or
-  restricted items.
+- **Inventory view** — every CS2 item you can sell, with name, icon,
+  wear/float and market status. Search by name, wear (also FN/MW/FT/WW/BS),
+  rarity or attached sticker/charm, and show only sellable, listed, awaiting or
+  locked items. Locked items (recently bought or traded) show when Steam lets
+  you sell them. Items that can never be sold on the Market (medals, coins,
+  default graffiti, storage units) are left out.
 - **Price comparison** — per item: Steam lowest + volume, buy-order depth,
   and third-party listings (net after fees) on the pluggable provider.
   **Refresh prices** in an item's detail view fetches that one item right

@@ -130,6 +130,12 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   React SSR listing page embeds in its `renderContext` payload (the classic
   `Market_LoadOrderSpread` HTML globals and the `itemordershistogram`
   endpoint that needs `item_nameid` are both gone).
+- `src/server/locks.ts` — pure: when a temporarily locked item becomes
+  marketable (`unlockDate`, from the owner text's `[date]` token or
+  steamcommunity's `cache_expiration`), stored as `unlocks_at` in the item's
+  raw JSON. `buildGrid` shows sellable, listed, pending and locked items
+  (locked only under the Locked filter) and drops items that can never be sold
+  from the grid and the counts.
 - `src/server/floats.ts` — pure offline decoder for own-item floats: Steam's
   CS2 inventory JSON exposes per-asset `asset_properties` whose `propertyid 6`
   ("Item Certificate") is the self-encoded inspect-link hex; it decodes it

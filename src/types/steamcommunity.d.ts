@@ -39,6 +39,8 @@ declare module 'steamcommunity' {
     pos: number
     tags?: Array<{ internal_name: string; name: string; category: string }>
     descriptions?: Array<{ type: string | number; value: string; color?: string }>
+    owner_descriptions?: Array<{ type?: string | number; value?: string; color?: string }>
+    cache_expiration?: string
   }
 
   interface HttpOptions {

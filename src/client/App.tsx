@@ -9,6 +9,7 @@ import {
   formatEuro,
   formatFloat,
   formatGridPrice,
+  formatUnlock,
   isStatTrak,
   parseStickers,
   quickPrices,
@@ -44,6 +45,7 @@ interface GridItem {
   icon_url: string
   marketable: boolean
   marketable_restriction?: string | null
+  unlocks_at?: string | null
   rarity: { internal_name: string | null; name: string | null; rank: number } | null
   own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, GridPrice>
@@ -844,6 +846,10 @@ export default function App() {
                 Approve in Steam Mobile
                 {item.pending && <Clock>{(now) => ` · ${formatClock(now - new Date(item.pending!.created_at).getTime())}`}</Clock>}
               </span>
+            ) : state === 'restricted' ? (
+              <span title={item.unlocks_at ? `Sellable from ${new Date(item.unlocks_at).toLocaleString()}` : undefined}>
+                unlocks {item.unlocks_at ? formatUnlock(item.unlocks_at) : 'later'}
+              </span>
             ) : (
               `prices synced ${item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}`
             )}
@@ -853,7 +859,13 @@ export default function App() {
               {ITEM_STATE_LABEL[state]}
             </span>
             <button className="btn btn-primary" onClick={() => openDetail(item)}>
-              {state === 'listed' || state === 'awaiting' ? 'Manage listing' : state === 'rejected' ? 'Try again' : 'Sell'}
+              {state === 'listed' || state === 'awaiting'
+                ? 'Manage listing'
+                : state === 'rejected'
+                  ? 'Try again'
+                  : state === 'restricted'
+                    ? 'Details'
+                    : 'Sell'}
             </button>
           </div>
         </div>
@@ -1063,6 +1075,14 @@ export default function App() {
                   )
                 }}
               </Clock>
+            </p>
+          )}
+          {state === 'restricted' && (
+            <p className="hint">
+              Steam doesn't let you sell this on the Market yet
+              {current.unlocks_at
+                ? `: it unlocks ${formatUnlock(current.unlocks_at)} (${new Date(current.unlocks_at).toLocaleString()}).`
+                : '.'}
             </p>
           )}
           {state === 'rejected' && (
@@ -1326,6 +1346,7 @@ export default function App() {
             <p className="muted counts" aria-live="polite">
               {`${grid?.counts.inventory ?? 0} owned · ${grid?.counts.marketable ?? 0} marketable · ${grid?.counts.listed ?? 0} listed`}
               {!!grid?.counts.pending && ` · ${grid.counts.pending} awaiting approval`}
+              {!!grid && grid.counts.inventory > grid.counts.marketable && ` · ${grid.counts.inventory - grid.counts.marketable} locked`}
               {filtering && ` · ${view.shown} shown`}
             </p>
           </div>
