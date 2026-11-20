@@ -100,8 +100,11 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
 - `src/server/db.ts` — better-sqlite3 in `data/skin-hq.db` (`DATA_DIR` env).
   Tables: `sessions` (encrypted Steam cookies), plus `items` /
   `price_snapshots` / `my_listings` / `pending_listings`. `price_snapshots`
-  is pruned after each price phase (`prunePriceSnapshots`): the newest row per
-  item+provider plus the last row of each day for 90 days.
+  is pruned after each price phase (`prunePriceSnapshots`): the newest row and
+  the newest successful row per item+provider, plus the last successful row of
+  each day for 90 days. `latestPriceSnapshots` returns the newest successful
+  row (the newest failed one only when none succeeded), so a 429 never hides a
+  good price and failed items count as stale for the next sync.
 - `src/server/steam.ts` — `steamcommunity` singleton. `login()` with a Steam
   Guard code entered in the UI; `setCookies()` to restore a stored session.
   Raw market POST/GETs (`sellitem`, `removelisting`, `mylistings`, price

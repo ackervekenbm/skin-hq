@@ -221,13 +221,32 @@ describe('pruneItemsExcept', () => {
 })
 
 describe('latestPriceSnapshots', () => {
-  it('finds the newest snapshot per item through the index, not a group rescan', () => {
-    const plan = db.db
-      .prepare(
-        `EXPLAIN QUERY PLAN SELECT MAX(fetched_at) FROM price_snapshots WHERE market_hash_name = ? AND provider = ?`,
-      )
-      .all('x', 'steam') as Array<{ detail: string }>
-    expect(plan.map((p) => p.detail).join('\n')).toMatch(/COVERING INDEX idx_price_snapshots_latest/)
+  it('finds each item through the index, never by rescanning the table per row', () => {
+    const plan = (db.db.prepare(`EXPLAIN QUERY PLAN ${db.LATEST_SNAPSHOTS_SQL}`).all() as Array<{ detail: string }>).map((p) => p.detail)
+    // Every read of price_snapshots goes through the index or the primary key.
+    for (const step of plan.filter((d) => /price_snapshots|\bs\b/.test(d))) expect(step).toMatch(/USING (COVERING )?INDEX|PRIMARY KEY/)
+  })
+
+  it('shows the last good price when newer fetches failed, and the error when none ever succeeded', () => {
+    vi.useFakeTimers()
+    try {
+      const snap = (iso: string, hash: string, over: Partial<Parameters<typeof db.insertPriceSnapshot>[0]> = {}) => {
+        vi.setSystemTime(new Date(iso))
+        db.insertPriceSnapshot({ market_hash_name: hash, provider: 'steam', lowest_cents: 1250, ...over })
+      }
+      snap('2026-11-20T08:00:00Z', 'L1')
+      snap('2026-11-20T09:00:00Z', 'L1', { lowest_cents: null, had_error: 1, note: 'HTTP 429' })
+      snap('2026-11-20T09:00:00Z', 'L2', { lowest_cents: null, had_error: 1, note: 'no listing data' })
+      snap('2026-11-19T08:00:00Z', 'L3', { lowest_cents: 900 })
+      snap('2026-11-20T09:00:00Z', 'L3', { lowest_cents: 950 })
+
+      const { byItem } = db.latestPriceSnapshots()
+      expect(byItem.get('L1')?.get('steam')).toMatchObject({ lowest_cents: 1250, had_error: 0, fetched_at: '2026-11-20T08:00:00.000Z' })
+      expect(byItem.get('L2')?.get('steam')).toMatchObject({ lowest_cents: null, had_error: 1, note: 'no listing data' })
+      expect(byItem.get('L3')?.get('steam')?.lowest_cents).toBe(950)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })
 
@@ -263,6 +282,30 @@ describe('prunePriceSnapshots', () => {
       expect(rows('P2')).toEqual([{ provider: 'steam', fetched_at: '2026-11-20T18:00:00.000Z' }])
       // Running it again changes nothing.
       expect(db.prunePriceSnapshots(new Date('2026-11-20T20:00:00Z'))).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it('keeps good prices over failed fetches, for history and for the grid', () => {
+    vi.useFakeTimers()
+    const failed = (iso: string, hash: string) => {
+      vi.setSystemTime(new Date(iso))
+      db.insertPriceSnapshot({ market_hash_name: hash, provider: 'steam', lowest_cents: null, had_error: 1, note: 'HTTP 429' })
+    }
+    try {
+      // A day whose last fetch failed keeps its last good one.
+      at('2026-11-10T06:00:00Z', 'E1')
+      failed('2026-11-10T18:00:00Z', 'E1')
+      // The newest good price is older than 90 days and only failures came after.
+      at('2026-01-01T06:00:00Z', 'E2')
+      failed('2026-11-20T06:00:00Z', 'E2')
+      failed('2026-11-20T07:00:00Z', 'E2')
+
+      db.prunePriceSnapshots(new Date('2026-11-20T20:00:00Z'))
+      expect(rows('E1').map((r) => r.fetched_at)).toEqual(['2026-11-10T06:00:00.000Z', '2026-11-10T18:00:00.000Z'])
+      expect(rows('E2').map((r) => r.fetched_at)).toEqual(['2026-01-01T06:00:00.000Z', '2026-11-20T07:00:00.000Z'])
+      expect(db.latestPriceSnapshots().byItem.get('E2')?.get('steam')?.lowest_cents).toBe(100)
     } finally {
       vi.useRealTimers()
     }

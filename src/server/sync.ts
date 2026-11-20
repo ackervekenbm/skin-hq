@@ -282,7 +282,8 @@ class SyncEngine {
     const listedHashes = [...new Set(listMyListings().map((l) => l.market_hash_name).filter((h): h is string => !!h))]
     const listedSet = new Set(listedHashes)
 
-    // Refresh prices only for hashes whose newest snapshot is stale. Listed
+    // Refresh prices only for hashes whose newest good snapshot is stale (a
+    // failed fetch is retried next sync, see latestPriceSnapshots). Listed
     // items are sorted first so they refresh before non-listed ones at the cap,
     // but respect the same freshness window — a back-to-back sync is a no-op.
     const { byItem } = latestPriceSnapshots()

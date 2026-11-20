@@ -24,7 +24,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
   the old listing and lists it again for you to approve.
 - **SQLite cache** — everything synced by paced background jobs; the UI
   never blocks on live Steam calls. Prices are kept for 90 days (one per day,
-  plus the newest), so the file stays small.
+  plus the newest), so the file stays small. A failed price fetch keeps the
+  last good price on screen and is retried at the next sync.
 - **About** — Settings shows which build is running (commit and build time)
   with links to the source, the issue tracker, the author and the license.
 - **Home screen** — add it to your phone's home screen (Share → Add to Home

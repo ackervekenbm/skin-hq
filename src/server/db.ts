@@ -253,9 +253,10 @@ export function insertPriceSnapshot(input: PriceSnapshotInput): void {
 
 export const SNAPSHOT_HISTORY_DAYS = 90
 
-// Keeps the newest snapshot per item and provider (what the grid shows) plus
-// the last one of each day for SNAPSHOT_HISTORY_DAYS (price history), and
-// deletes the rest. Returns how many rows went.
+// Keeps, per item and provider, the newest snapshot and the newest successful
+// one (what the grid shows, see latestPriceSnapshots), plus the last successful
+// one of each day for SNAPSHOT_HISTORY_DAYS (price history), and deletes the
+// rest. Returns how many rows went.
 export function prunePriceSnapshots(now = new Date()): number {
   const cutoff = new Date(now.getTime() - SNAPSHOT_HISTORY_DAYS * 86_400_000).toISOString()
   return db
@@ -263,24 +264,30 @@ export function prunePriceSnapshots(now = new Date()): number {
       `DELETE FROM price_snapshots WHERE id NOT IN (
          SELECT MAX(id) FROM price_snapshots GROUP BY market_hash_name, provider
          UNION
-         SELECT MAX(id) FROM price_snapshots WHERE fetched_at >= ?
+         SELECT MAX(id) FROM price_snapshots WHERE had_error = 0 GROUP BY market_hash_name, provider
+         UNION
+         SELECT MAX(id) FROM price_snapshots WHERE had_error = 0 AND fetched_at >= ?
            GROUP BY market_hash_name, provider, substr(fetched_at, 1, 10)
        )`,
     )
     .run(cutoff).changes
 }
 
+// Per item and provider: the newest successful snapshot, or the newest failed
+// one when none ever succeeded. A failed fetch (429, network) must not hide the
+// last good price, nor count as fresh for the sync. One indexed lookup per pair.
+export const LATEST_SNAPSHOTS_SQL = `
+  SELECT s.market_hash_name, s.provider, s.lowest_cents, s.median_cents, s.volume, s.sell_count, s.buy_count,
+         s.highest_buy_cents, s.float_value, s.paint_seed, s.stickers, s.had_error, s.note, s.fetched_at
+  FROM (SELECT DISTINCT market_hash_name AS h, provider AS p FROM price_snapshots) g
+  JOIN price_snapshots s ON s.id = COALESCE(
+    (SELECT id FROM price_snapshots WHERE market_hash_name = g.h AND provider = g.p AND had_error = 0
+       ORDER BY fetched_at DESC LIMIT 1),
+    (SELECT id FROM price_snapshots WHERE market_hash_name = g.h AND provider = g.p
+       ORDER BY fetched_at DESC LIMIT 1))`
+
 export function latestPriceSnapshots(): { byItem: Map<string, Map<string, PriceSnapshotRow>>; latestAt: string | null } {
-  const rows = db
-    .prepare(
-      `SELECT market_hash_name, provider, lowest_cents, median_cents, volume, sell_count, buy_count, highest_buy_cents, float_value, paint_seed, stickers, had_error, note, fetched_at
-       FROM price_snapshots snap
-       WHERE fetched_at = (
-         SELECT MAX(fetched_at) FROM price_snapshots
-         WHERE market_hash_name = snap.market_hash_name AND provider = snap.provider
-       )`,
-    )
-    .all() as Array<Omit<PriceSnapshotRow, 'id'>>
+  const rows = db.prepare(LATEST_SNAPSHOTS_SQL).all() as Array<Omit<PriceSnapshotRow, 'id'>>
 
   const byItem = new Map<string, Map<string, PriceSnapshotRow>>()
   let latestAt: string | null = null
