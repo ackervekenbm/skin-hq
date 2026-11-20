@@ -47,37 +47,23 @@ time.
 
 ## Run it in Docker
 
-CI builds a secrets-free image and publishes it to GHCR
-(`.github/workflows/docker-build.yml`, amd64 + arm64). The deploy server
-does not need this repo checked out — copy `docker-compose.yml` plus a
-`.env` over and pull the image:
+CI publishes a public, secrets-free image for amd64 and arm64:
+`ghcr.io/ackervekenbm/skin-hq`. The server doesn't need this repo: copy
+`docker-compose.yml` and `.env.example` (as `.env`, with a key from
+`openssl rand -hex 32` in `SKINHQ_SESSION_KEY`), then:
 
 ```bash
-# on the deploy server (once)
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # generate a key
-
-# copy docker-compose.yml alongside, then create .env next to it:
-cat > .env <<EOF
-SKINHQ_SESSION_KEY=<the hex from above>
-CSFLOAT_API_KEY=<optional, csfloat.com key>
-EOF
-
-docker compose up -d          # pulls ghcr.io/ackervekenbm/skin-hq and runs it
+docker compose up -d          # pulls the image and runs it
 ```
 
-Then open <http://localhost:8090>. The image is multi-stage: the app is
-compiled in `node:22-alpine`, then run by `node:22-alpine` running the
-Express server (API + static client) as the unprivileged `node` user; a data
-folder left behind by an older, root-run image is handed over on start. No secrets are baked into the image;
-compose injects them from the server's `.env` at runtime. Data lives in the
-Docker volume `skin-hq-data`, so redeploys keep your session and cache.
+Open <http://localhost:8090>. Your Steam session and the price cache live in
+the Docker volume `skin-hq-data`, so updates
+(`docker compose pull && docker compose up -d`) keep them. The app has no
+login of its own: keep it on your home network.
 
-> If the repo is private, log into GHCR first:
-> `echo $GITHUB_TOKEN | docker login ghcr.io -u <owner> --password-stdin`.
-> Updating: `docker compose pull && docker compose up -d`.
-
-OpenMediaVault (OMV) has its own walkthrough with file placement,
-troubleshooting and the upgrade path: `docs/deploy-openmediavault.md`.
+The full guide, with OpenMediaVault, every setting, updating and rolling
+back, backups, HTTPS and troubleshooting, is
+[docs/deployment.md](docs/deployment.md).
 
 ## Scripts
 
@@ -98,6 +84,7 @@ troubleshooting and the upgrade path: `docs/deploy-openmediavault.md`.
 ├── eslint.config.js / tsconfig.json / tsconfig.server.json / vite.config.ts
 ├── index.html                     # app shell
 ├── docs/plan.md                   # living plan — updated as the app evolves
+├── docs/deployment.md             # running it on a server (OMV, compose, HTTPS)
 └── src/
     ├── server/                    # Express + SQLite + Steam session + price providers
     │   ├── index.ts               # bootstrap + routes
