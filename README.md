@@ -17,7 +17,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
 - **Price comparison** — per item: Steam lowest + volume, buy-order depth,
   and third-party listings (net after fees) on the pluggable provider.
   **Refresh prices** in an item's detail view fetches that one item right
-  away instead of waiting for the next sync.
+  away instead of waiting for the next sync (once every 30 s per item, and
+  not while a sync is running, to stay under Steam's limits).
 - **Listing manager** — your active Steam Market listings; sell/cancel with
   a "awaiting your confirmation in Steam Mobile" flow. To change the price
   of a listed item, type the new one and press **Relist**: the app cancels

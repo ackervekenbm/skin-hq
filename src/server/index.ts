@@ -6,7 +6,7 @@ import * as steam from './steam'
 import { listItems } from './db'
 import { forgetListing, refreshListings } from './listings'
 import { relist, sellAndTrack } from './selling'
-import { buildGrid, refreshItemPrices, startAutoSync, sync } from './sync'
+import { buildGrid, refreshItemPrices, refreshRefusal, startAutoSync, sync } from './sync'
 import { buildCompare } from './compare'
 import { isAllowedHost, isCrossSiteWrite, isSteamId, parseAllowedHosts } from './guard'
 
@@ -133,6 +133,11 @@ app.post('/api/price/refresh', async (req, res) => {
   }
   if (!listItems().some((i) => i.market_hash_name === hash)) {
     res.status(404).json({ error: 'not in your inventory' })
+    return
+  }
+  const refusal = refreshRefusal(hash)
+  if (refusal) {
+    res.status(429).json({ error: refusal })
     return
   }
   const errors = await refreshItemPrices(hash)

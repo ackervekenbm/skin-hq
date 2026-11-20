@@ -400,12 +400,26 @@ function storePrice(hash: string, provider: string, res: ItemPrice): void {
   })
 }
 
+// One manual refresh per item per REFRESH_COOLDOWN_MS, and none during a sync,
+// so the button can't double the request rate Steam sees.
+const REFRESH_COOLDOWN_MS = 30_000
+const lastRefresh = new Map<string, number>()
+
+/** Why a manual refresh of `hash` has to wait, or null when it may run now. */
+export function refreshRefusal(hash: string, now = Date.now()): string | null {
+  if (sync.status().running) return 'a sync is running and refreshes prices itself; try again when it finishes'
+  const wait = (lastRefresh.get(hash) ?? -Infinity) + REFRESH_COOLDOWN_MS - now
+  return wait > 0 ? `refreshed just now; try again in ${Math.ceil(wait / 1000)} s` : null
+}
+
 /**
  * Fetches and stores fresh prices for one item from every provider, outside
  * the scheduled sync (the "Refresh prices" button in the detail view).
- * Returns the provider errors, empty when everything answered.
+ * Returns the provider errors, empty when everything answered. Check
+ * refreshRefusal first.
  */
 export async function refreshItemPrices(hash: string): Promise<string[]> {
+  lastRefresh.set(hash, Date.now())
   const errors: string[] = []
   for (const provider of providers) {
     const res = await fetchPrice(provider, hash)

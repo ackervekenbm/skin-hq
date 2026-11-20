@@ -24,7 +24,7 @@ vi.mock('../src/server/db', () => dbMock)
 vi.mock('../src/server/listings', () => ({ pendingByAssetId: vi.fn(() => new Map()), refreshListings: vi.fn() }))
 vi.mock('../src/server/price', () => priceMock)
 
-const { refreshItemPrices } = await import('../src/server/sync')
+const { refreshItemPrices, refreshRefusal, sync } = await import('../src/server/sync')
 
 describe('refreshItemPrices', () => {
   it('stores a snapshot per provider, errors included, and reports the errors', async () => {
@@ -42,5 +42,25 @@ describe('refreshItemPrices', () => {
     expect(dbMock.insertPriceSnapshot).toHaveBeenCalledWith(
       expect.objectContaining({ provider: 'csfloat', lowest_cents: null, had_error: 1, note: 'HTTP 401' }),
     )
+  })
+})
+
+describe('refreshRefusal', () => {
+  it('lets one refresh per item through every 30 s', async () => {
+    const t = Date.now()
+    expect(refreshRefusal('Fresh item', t)).toBeNull()
+    await refreshItemPrices('Fresh item')
+    expect(refreshRefusal('Fresh item', t + 1_000)).toMatch(/try again in (29|30) s/)
+    expect(refreshRefusal('Another item', t + 1_000)).toBeNull()
+    expect(refreshRefusal('Fresh item', t + 31_000)).toBeNull()
+  })
+
+  it('refuses while a sync is running', () => {
+    const spy = vi.spyOn(sync, 'status').mockReturnValue({ ...sync.status(), running: true })
+    try {
+      expect(refreshRefusal('Idle item')).toMatch(/sync is running/)
+    } finally {
+      spy.mockRestore()
+    }
   })
 })
