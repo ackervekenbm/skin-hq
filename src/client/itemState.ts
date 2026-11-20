@@ -27,7 +27,7 @@ export const ITEM_STATE_LABEL: Record<ItemState, string> = {
   listed: 'listed',
   rejected: 'rejected',
   marketable: 'sellable',
-  restricted: 'restricted',
+  restricted: 'locked',
 }
 
 export function itemState(item: ListingStateInput): ItemState {

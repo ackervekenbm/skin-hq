@@ -179,3 +179,12 @@ export function formatClock(ms: number): string {
   const s = String(total % 60).padStart(2, '0')
   return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
 }
+
+/** How long until a locked item unlocks: "in 3 days", "in 5 h", "in 12 min", "any moment now". */
+export function formatUnlock(iso: string, now = Date.now()): string {
+  const min = Math.ceil((new Date(iso).getTime() - now) / 60_000)
+  if (!(min > 0)) return 'any moment now'
+  if (min < 60) return `in ${min} min`
+  if (min < 48 * 60) return `in ${Math.ceil(min / 60)} h`
+  return `in ${Math.ceil(min / 1440)} days`
+}

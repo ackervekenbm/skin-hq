@@ -5,6 +5,7 @@ import type { StartSessionResponse } from 'steam-session/dist/interfaces-externa
 import { clearSession, getItem, loadSession, pruneItemsExcept, saveSession, upsertItems } from './db'
 import { decodeSsrOrderbook } from './orderbook'
 import { attachedFromDescriptions, inspectFromProperties, type AssetPropertyEntry, type OwnItemFloat } from './floats'
+import { unlockDate } from './locks'
 
 export const APPID = 730
 export const CONTEXTID = '2'
@@ -354,6 +355,8 @@ export interface InventoryItem {
   own_float?: number
   own_seed?: number
   own_stickers?: string | null
+  /** When a temporarily locked item becomes sellable (see locks.ts). */
+  unlocks_at?: string | null
 }
 
 function fetchContext(contextid: string): Promise<CEconItem[]> {
@@ -398,6 +401,7 @@ function mapItem(item: CEconItem, contextid: string): InventoryItem {
     pos: item.pos,
     tags: (item.tags ?? []).map((t) => ({ internal_name: String(t.internal_name ?? ''), name: String(t.name ?? ''), category: String(t.category ?? '') })),
     descriptions: (item.descriptions ?? []).map((d) => ({ type: d.type, value: String(d.value ?? ''), color: d.color })),
+    unlocks_at: unlockDate(item),
   }
 }
 

@@ -342,3 +342,24 @@ describe('buildGrid order', () => {
     expect(first).toEqual(['A1', 'A2', 'A3'])
   })
 })
+
+describe('buildGrid locked and never-sellable items', () => {
+  beforeEach(() => {
+    dbMock.listMyListings.mockReturnValue([])
+    listingsMock.pendingByAssetId.mockReturnValue(new Map())
+  })
+
+  it('shows and counts a locked skin, and leaves out items that can never be sold', () => {
+    dbMock.listItems.mockReturnValue([
+      itemRow({ assetid: 'SELL', market_hash_name: 'AK-47 | Slate (Factory New)' }),
+      itemRow({ assetid: 'LOCK', market_hash_name: 'AWP | Atheris (Field-Tested)', marketable: 0, raw: JSON.stringify({ unlocks_at: '2026-11-27T00:00:00.000Z' }) }),
+      itemRow({ assetid: 'MEDAL', market_hash_name: '2026 Service Medal', marketable: 0, raw: '{}' }),
+    ])
+    const grid = buildGrid()
+    expect(grid.items.map((i) => [i.assetid, i.unlocks_at])).toEqual([
+      ['SELL', null],
+      ['LOCK', '2026-11-27T00:00:00.000Z'],
+    ])
+    expect(grid.counts).toMatchObject({ inventory: 2, marketable: 1 })
+  })
+})

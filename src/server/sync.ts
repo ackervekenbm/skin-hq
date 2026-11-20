@@ -32,6 +32,8 @@ export interface GridItem {
   icon_url: string
   marketable: boolean
   marketable_restriction?: string | null
+  /** When a locked item becomes sellable; null for everything else. */
+  unlocks_at: string | null
   rarity: { internal_name: string | null; name: string | null; rank: number } | null
   own: { float_value: number; paint_seed: number; stickers: string | null } | null
   prices: Record<string, PriceSnapshotRow>
@@ -60,6 +62,7 @@ export interface GridResponse {
 
 interface InventoryRawFields {
   marketable_restriction?: string | number
+  unlocks_at?: string | null
   tags?: Array<{ internal_name: string; name: string; category: string; color?: string }>
 }
 
@@ -142,6 +145,14 @@ export function enrichOwnStickers(
     return JSON.stringify(parsed)
   } catch {
     return raw
+  }
+}
+
+function rawFields(i: { raw: string }): InventoryRawFields {
+  try {
+    return JSON.parse(i.raw) as InventoryRawFields
+  } catch {
+    return {} // legacy rows
   }
 }
 
@@ -296,7 +307,8 @@ class SyncEngine {
     const candidates = [
       ...new Set(
         listItems()
-          .filter((i) => i.marketable === 1 || listedSet.has(i.market_hash_name))
+          // Locked skins are priced too, so their cards show what they'll be worth.
+          .filter((i) => i.marketable === 1 || listedSet.has(i.market_hash_name) || !!rawFields(i).unlocks_at)
           .map((i) => i.market_hash_name),
       ),
     ].filter((h): h is string => !!h)
@@ -518,15 +530,14 @@ export function buildGrid(): GridResponse {
   const keepVisible = (i: (typeof all)[number]): boolean =>
     i.marketable === 1 || listingFor(i.assetid, i.market_hash_name) != null || pendingById.has(i.assetid)
   const marketable = all.filter(keepVisible)
+  // A temporarily locked skin is yours and sellable later, so it is shown (under
+  // the Locked filter) and counted. Items that can never be sold (medals,
+  // default graffiti, storage units) carry no unlock date and are left out.
+  const shown = all.filter((i) => keepVisible(i) || !!rawFields(i).unlocks_at)
 
-  const items: GridItem[] = marketable
+  const items: GridItem[] = shown
     .map((i) => {
-      let raw: InventoryRawFields = {}
-      try {
-        raw = JSON.parse(i.raw) as InventoryRawFields
-      } catch {
-        /* ignore legacy rows */
-      }
+      const raw = rawFields(i)
       const listing = listingFor(i.assetid, i.market_hash_name)
       // A pending sell only shows while the item is genuinely not listed. If a
       // listing does exist (matched by hash, say) that is the stronger fact and
@@ -551,6 +562,7 @@ export function buildGrid(): GridResponse {
         icon_url: i.icon_url ?? '',
         marketable: i.marketable === 1,
         marketable_restriction: typeof raw.marketable_restriction === 'number' ? String(raw.marketable_restriction) : raw.marketable_restriction,
+        unlocks_at: i.marketable === 1 ? null : (raw.unlocks_at ?? null),
         rarity: parseRarity(raw),
         own:
           i.own_float != null
@@ -574,7 +586,7 @@ export function buildGrid(): GridResponse {
   return {
     refreshedAt: latestAt,
     counts: {
-      inventory: all.length,
+      inventory: shown.length,
       marketable: marketable.length,
       listed: listings.length,
       pending: items.filter((i) => i.pending != null).length,

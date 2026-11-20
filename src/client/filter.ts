@@ -6,11 +6,11 @@ import { canSell, itemState, type ListingStateInput } from './itemState'
 export type StatusFilter = 'all' | 'sellable' | 'listed' | 'awaiting' | 'restricted'
 
 export const STATUS_FILTERS: Array<{ id: StatusFilter; label: string }> = [
-  { id: 'all', label: 'All' },
+  { id: 'all', label: 'All but locked' },
   { id: 'sellable', label: 'Sellable' },
   { id: 'listed', label: 'Listed' },
   { id: 'awaiting', label: 'Awaiting' },
-  { id: 'restricted', label: 'Restricted' },
+  { id: 'restricted', label: 'Locked' },
 ]
 
 export interface FilterableItem extends ListingStateInput {
@@ -40,7 +40,8 @@ function haystack(item: FilterableItem): string {
 }
 
 function matchesStatus(item: FilterableItem, status: StatusFilter): boolean {
-  if (status === 'all') return true
+  // Locked items can't be sold yet, so they only show under their own filter.
+  if (status === 'all') return itemState(item) !== 'restricted'
   if (status === 'sellable') return canSell(item)
   return itemState(item) === status
 }

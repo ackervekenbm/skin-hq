@@ -21,13 +21,14 @@ const redline = item('StatTrak™ AK-47 | Redline (Field-Tested)', {
   own: { stickers: JSON.stringify({ stickers: [{ name: 'Crown (Foil)' }], keychains: [{ name: 'Lil Squirt' }] }) },
 })
 const awp = item('AWP | Asiimov (Battle-Scarred)', { pending: { state: 'awaiting', price_cents: 1, created_at: '' } })
+// Locked: bought recently, sellable once Steam's lock ends.
 const case_ = item('Kilowatt Case', { marketable: false })
 const all = [vulcan, redline, awp, case_]
 const ids = (xs: Array<{ id: string }>) => xs.map((x) => x.id)
 
 describe('filterItems', () => {
-  it('returns everything for an empty query and "all"', () => {
-    expect(filterItems(all, '  ', 'all')).toEqual(all)
+  it('returns everything but locked items for an empty query and "all"', () => {
+    expect(filterItems(all, '  ', 'all')).toEqual([vulcan, redline, awp])
   })
 
   it('matches every word, in any order, case-insensitively', () => {
