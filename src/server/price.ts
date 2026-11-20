@@ -126,7 +126,3 @@ class CSFloatProvider implements PriceProvider {
 }
 
 export const providers: PriceProvider[] = [new SteamProvider(), new CSFloatProvider()]
-
-export async function comparePrices(hashName: string): Promise<ItemPrice[]> {
-  return Promise.all(providers.map((p) => p.getItem(hashName)))
-}

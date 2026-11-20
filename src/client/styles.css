@@ -1456,3 +1456,11 @@ footer {
     transition: none !important;
   }
 }
+.detail-refresh {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 12px;
+}
