@@ -466,6 +466,27 @@ input::placeholder {
   flex-wrap: wrap;
 }
 
+.grid-search,
+.grid-status {
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 6px 10px;
+  color: var(--text);
+}
+
+.grid-search {
+  width: 240px;
+  max-width: 100%;
+}
+
+.grid-search:focus,
+.grid-status:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--ring);
+}
+
 .group {
   margin-bottom: 6px;
 }
@@ -1369,6 +1390,15 @@ footer {
 /* ── Breakpoints ─────────────────────────────────────────── */
 
 @media (max-width: 720px) {
+  .head-tools {
+    width: 100%;
+  }
+
+  .grid-search {
+    flex: 1 1 100%;
+    width: auto;
+  }
+
   .c-body {
     grid-template-columns: 1fr;
     gap: 12px;

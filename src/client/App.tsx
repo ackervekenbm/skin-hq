@@ -16,6 +16,7 @@ import {
   type GridPrice,
   type StickerRef,
 } from './format'
+import { filterItems, STATUS_FILTERS, type StatusFilter } from './filter'
 import { groupByRarity, type RarityGroup } from './grouping'
 import { canCancel, canSell, itemState, ITEM_STATE_LABEL, type PendingView } from './itemState'
 
@@ -132,7 +133,8 @@ export default function App() {
   const [grid, setGrid] = useState<GridResponse | null>(null)
   const [gridLoading, setGridLoading] = useState(false)
   const [grouping, setGrouping] = useState(true)
-  const [listedOnly, setListedOnly] = useState(false)
+  const [query, setQuery] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [sellPrices, setSellPrices] = useState<Record<string, string>>({})
   const [compare, setCompare] = useState<CompareRow | null>(null)
   const [compareLoading, setCompareLoading] = useState(false)
@@ -1025,12 +1027,13 @@ export default function App() {
     )
   }
 
-  const view = useMemo<{ groups: RarityGroup<GridItem>[] | null; items: GridItem[] | null }>(() => {
-    if (!grid) return { groups: null, items: null }
-    const items = listedOnly ? grid.items.filter((i) => i.listing) : grid.items
-    if (!grouping) return { groups: null, items }
-    return { groups: groupByRarity(items), items: null }
-  }, [grid, grouping, listedOnly])
+  const filtering = query.trim() !== '' || statusFilter !== 'all'
+  const view = useMemo<{ groups: RarityGroup<GridItem>[] | null; items: GridItem[] | null; shown: number }>(() => {
+    if (!grid) return { groups: null, items: null, shown: 0 }
+    const items = filterItems(grid.items, query, statusFilter)
+    if (!grouping) return { groups: null, items, shown: items.length }
+    return { groups: groupByRarity(items), items: null, shown: items.length }
+  }, [grid, grouping, query, statusFilter])
 
   useEffect(() => {
     // Logged-out = no inventory view at all: every inventory-related section is
@@ -1192,17 +1195,36 @@ export default function App() {
         <div className="grid-head">
           <div>
             <h2>Inventory</h2>
-            <p className="muted counts">
-              {listedOnly
-                ? `${grid?.items.filter((i) => i.listing).length ?? 0} listed shown`
-                : `${grid?.counts.inventory ?? 0} owned · ${grid?.counts.marketable ?? 0} marketable · ${grid?.counts.listed ?? 0} listed`}
+            <p className="muted counts" aria-live="polite">
+              {`${grid?.counts.inventory ?? 0} owned · ${grid?.counts.marketable ?? 0} marketable · ${grid?.counts.listed ?? 0} listed`}
               {!!grid?.counts.pending && ` · ${grid.counts.pending} awaiting approval`}
+              {filtering && ` · ${view.shown} shown`}
             </p>
           </div>
           <div className="head-tools">
-            <button className="btn btn-ghost" onClick={() => setListedOnly((v) => !v)}>
-              {listedOnly ? 'All items' : 'Listed only'}
-            </button>
+            <input
+              type="search"
+              className="grid-search"
+              placeholder="Search name, wear, sticker…"
+              aria-label="Search the inventory"
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Escape') setQuery('')
+              }}
+            />
+            <select
+              className="grid-status"
+              aria-label="Show items that are"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as StatusFilter)}
+            >
+              {STATUS_FILTERS.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
             <button className="btn btn-ghost" onClick={() => setGrouping((v) => !v)}>
               {grouping ? 'Flat list' : 'Group by rarity'}
             </button>
@@ -1210,6 +1232,20 @@ export default function App() {
         </div>
         {(!grid || grid.items.length === 0) && (
           <p className="muted">Nothing sellable yet. Sign in and hit “Sync now” to pull your inventory and market prices.</p>
+        )}
+        {grid && grid.items.length > 0 && view.shown === 0 && (
+          <p className="muted">
+            Nothing matches.{' '}
+            <button
+              className="btn btn-ghost btn-sm"
+              onClick={() => {
+                setQuery('')
+                setStatusFilter('all')
+              }}
+            >
+              Clear filters
+            </button>
+          </p>
         )}
         {view?.groups ? (
           view.groups.map((group) => (
