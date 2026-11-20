@@ -480,10 +480,10 @@ async function attachOwnFloats(byId: Map<string, InventoryItem>): Promise<void> 
       attachNames(info, item.descriptions)
       item.own_float = info.float_value
       item.own_seed = info.paint_seed
-      item.own_stickers =
-        info.stickers.length > 0 || info.keychains.length > 0
-          ? JSON.stringify({ stickers: info.stickers, keychains: info.keychains })
-          : null
+      // Always a payload once the certificate was read, empty lists included:
+      // null means "not read" to upsertItems, which then keeps the old stickers,
+      // so a scraped-off sticker or removed charm would never clear.
+      item.own_stickers = JSON.stringify({ stickers: info.stickers, keychains: info.keychains })
     }
   } catch (err) {
     console.warn('[inventory] own-item floats unavailable (best-effort):', (err as Error).message)

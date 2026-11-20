@@ -121,6 +121,9 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
   key lives in your `.env` only, never in the repo.
 - The dev server binds to `127.0.0.1`; the Docker container exposes `8090`
   on your local host by default.
+- The app only answers to `localhost`, IP addresses and the host names you
+  list in `SKINHQ_ALLOWED_HOSTS`, so a hostile website can't reach it by
+  pointing its own name at your server (DNS rebinding).
 
 ## Future ideas
 

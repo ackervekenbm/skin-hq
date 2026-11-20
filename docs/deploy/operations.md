@@ -11,6 +11,7 @@ key; leaving one out, or empty, keeps the default.
 |---|---|---|
 | `SKINHQ_SESSION_KEY` | (required) | Encrypts the stored Steam session cookies. Any long random string; `openssl rand -hex 32` is the norm. Changing it means signing in to Steam again |
 | `CSFLOAT_API_KEY` | none | CSFloat key (<https://csfloat.com/api>). Fills the CSFloat price column; without it that column stays empty |
+| `SKINHQ_ALLOWED_HOSTS` | none | Host names SkinHQ answers to besides `localhost` and IP addresses, comma-separated, e.g. `skin-hq.example.home,nas.local`. Needed for any name you open it through (a reverse proxy, a `.local` name); others get `421` |
 | `SYNC_INTERVAL_MIN` | `60` | Minutes between automatic syncs of inventory, listings and prices. `0` turns them off: only **Sync now** syncs |
 | `SYNC_PRICE_FRESH_MS` | `21600000` (6 h) | A price younger than this isn't fetched again, which keeps frequent syncs cheap and under Steam's limits |
 | `SYNC_PRICE_DELAY_MS` | `1000` | Pause between two price requests to Steam |
