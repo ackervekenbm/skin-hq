@@ -472,6 +472,10 @@ export default function App() {
   }, [syncWatching, grid?.sync.running, loadGrid, refreshGrid, pushLog])
 
   const syncDisplay = syncStatus ?? grid?.sync ?? null
+  const oldestPrice = (grid?.items ?? []).reduce<string | null>(
+    (oldest, i) => (i.pricesSyncedAt && (!oldest || i.pricesSyncedAt < oldest) ? i.pricesSyncedAt : oldest),
+    null,
+  )
 
   // A sell only exists once you approve it in the Steam Mobile app, so the item
   // sits in limbo between "Steam took the request" and "there is a listing".
@@ -1267,7 +1271,11 @@ export default function App() {
             </span>
           )}
           {!syncDisplay?.running && syncDisplay?.last.prices && (
-            <span className="muted">prices up to {relTime(syncDisplay.last.prices)}</span>
+            <span className="muted">
+              {/* A sync skips prices that are still fresh, so the oldest price can predate the last sync. */}
+              synced {relTime(syncDisplay.last.prices)}
+              {oldestPrice && ` · oldest price ${relTime(oldestPrice)}`}
+            </span>
           )}
           {!!syncDisplay?.autoSyncMin && syncDisplay.autoSyncMin > 0 && (
             <span className="chip">{formatAutoSyncMin(syncDisplay.autoSyncMin)}</span>
