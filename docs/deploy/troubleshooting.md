@@ -20,6 +20,7 @@ Part of the [deployment guides](README.md).
 | Steam answers 429 / prices stop filling in | Steam is rate-limiting. The sync backs off on its own and a throttled session is *not* signed out. Wait a few minutes, then **Sync now** |
 | The CSFloat column is empty | `CSFLOAT_API_KEY` isn't set (or isn't named in the compose file's `environment:`), or CSFloat rejected it |
 | A sell stays "awaiting approval" | Confirm (or decline) it in the Steam Mobile app. The app checks with Steam after 90 s and stops waiting after 30 min |
+| `Unknown host name. Add it to SKINHQ_ALLOWED_HOSTS` (HTTP 421) | You opened it through a host name that isn't listed. Add the name to `SKINHQ_ALLOWED_HOSTS` (comma-separated) and restart. IP addresses and `localhost` always work |
 | The page loads but every action fails, behind a proxy | It is served under a sub-path. Give it its own host name ([https.md](https.md)) |
 | The port is already in use | Change the left-hand side of `"8090:3000"` |
 | **Pull** is denied | Stale GitHub credentials for the user running Docker: `docker logout ghcr.io` (and with `sudo`), then pull again |

@@ -15,7 +15,12 @@ it. With HTTPS, sign in over the HTTPS address.
 - **Its own host name**, e.g. `skin-hq.example.home`. The app calls `/api/...`
   from the root, so it can't live under a sub-path.
 - Point it at the container's port `3000` (or the host port you published).
-  No extra headers or base-URL setting needed.
+  No extra headers needed.
+- **List the name in `SKINHQ_ALLOWED_HOSTS`**, e.g.
+  `SKINHQ_ALLOWED_HOSTS=skin-hq.example.home`. SkinHQ only answers to
+  `localhost`, IP addresses and the names listed there; any other name gets
+  `421`. That stops a hostile website from pointing its own name at your
+  server (DNS rebinding) and driving the app through your browser.
 - Keep the name inside your LAN or tailnet: the app still has no login
   ([why](README.md#keep-it-on-your-lan-or-tailnet)).
 
