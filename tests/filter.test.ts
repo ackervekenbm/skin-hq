@@ -36,6 +36,20 @@ describe('filterItems', () => {
     expect(filterItems(all, 'ak asiimov', 'all')).toEqual([])
   })
 
+  // Seen live: "ft ak" listed StatTrak UMP-45s because "ak" sits inside "StatTrak".
+  it('matches from the start of a word, not inside one', () => {
+    const ump = item('StatTrak™ UMP-45 | Continuum (Field-Tested)')
+    expect(ids(filterItems([...all, ump], 'ft ak', 'all'))).toEqual([redline.id])
+    expect(ids(filterItems(all, 'vulc', 'all'))).toEqual([vulcan.id])
+    expect(ids(filterItems(all, 'ak-47 red', 'all'))).toEqual([redline.id])
+    expect(ids(filterItems(all, '47', 'all'))).toEqual([vulcan.id, redline.id])
+    expect(filterItems(all, 'ulcan', 'all')).toEqual([])
+    // Regex characters in the query are plain text.
+    expect(ids(filterItems(all, '(foil', 'all'))).toEqual([redline.id])
+    expect(filterItems(all, '.*', 'all')).toEqual([])
+    expect(() => filterItems(all, '[', 'all')).not.toThrow()
+  })
+
   it('matches wear by name or initials, rarity, StatTrak and attached stickers and charms', () => {
     expect(ids(filterItems(all, 'factory', 'all'))).toEqual([vulcan.id])
     expect(ids(filterItems(all, 'ft', 'all'))).toEqual([redline.id])
