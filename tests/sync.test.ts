@@ -324,3 +324,19 @@ describe('buildGrid pending sells', () => {
     expect(grid.items[0].listing).toEqual({ listingid: 'L1', price_cents: 1250 })
   })
 })
+describe('buildGrid order', () => {
+  beforeEach(() => {
+    dbMock.listMyListings.mockReturnValue([])
+    listingsMock.pendingByAssetId.mockReturnValue(new Map())
+  })
+
+  it('keeps copies of one skin in the same order whatever order the db returns them in', () => {
+    // listItems orders by updated_at, which every inventory sync rewrites.
+    const copies = ['A3', 'A1', 'A2'].map((assetid) => itemRow({ assetid }))
+    dbMock.listItems.mockReturnValue(copies)
+    const first = buildGrid().items.map((i) => i.assetid)
+    dbMock.listItems.mockReturnValue([...copies].reverse())
+    expect(buildGrid().items.map((i) => i.assetid)).toEqual(first)
+    expect(first).toEqual(['A1', 'A2', 'A3'])
+  })
+})

@@ -50,3 +50,25 @@ export function canSell(item: ListingStateInput): boolean {
 export function canCancel(item: ListingStateInput): boolean {
   return itemState(item) === 'listed'
 }
+
+/**
+ * What became of the sells that were awaiting approval at the last look:
+ * `listed` (approved), `rejected` (declined or expired), and the ids still
+ * awaiting now, to pass back in next time. Items still awaiting, or gone from
+ * the inventory, are reported as neither.
+ */
+export function resolvedSells<T extends ListingStateInput & { assetid: string }>(
+  wasAwaiting: ReadonlySet<string>,
+  items: readonly T[],
+): { listed: T[]; rejected: T[]; awaiting: Set<string> } {
+  const listed: T[] = []
+  const rejected: T[] = []
+  const awaiting = new Set<string>()
+  for (const item of items) {
+    const state = itemState(item)
+    if (state === 'awaiting') awaiting.add(item.assetid)
+    else if (wasAwaiting.has(item.assetid) && state === 'listed') listed.push(item)
+    else if (wasAwaiting.has(item.assetid) && state === 'rejected') rejected.push(item)
+  }
+  return { listed, rejected, awaiting }
+}

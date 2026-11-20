@@ -520,7 +520,11 @@ export function buildGrid(): GridResponse {
     })
     .sort(
       (a, b) =>
-        (a.rarity?.rank ?? 99) - (b.rarity?.rank ?? 99) || a.market_hash_name.localeCompare(b.market_hash_name),
+        (a.rarity?.rank ?? 99) - (b.rarity?.rank ?? 99) ||
+        a.market_hash_name.localeCompare(b.market_hash_name) ||
+        // Copies of one skin would otherwise follow updated_at, which every
+        // inventory sync rewrites, so they swapped places between polls.
+        a.assetid.localeCompare(b.assetid),
     )
 
   return {
