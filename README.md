@@ -45,39 +45,29 @@ time.
 > password is never persisted — only the resulting session cookies, encrypted
 > with a key you supply via `SKINHQ_SESSION_KEY`.
 
-## Run it in Docker
+## Deployment
 
-CI builds a secrets-free image and publishes it to GHCR
-(`.github/workflows/docker-build.yml`, amd64 + arm64). The deploy server
-does not need this repo checked out — copy `docker-compose.yml` plus a
-`.env` over and pull the image:
+SkinHQ is **one Node process**: it serves the app, the API and the background
+sync, and runs anywhere Docker or Node 22+ does, on a 64-bit OS.
 
-```bash
-# on the deploy server (once)
-node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"  # generate a key
+| Route | Good for |
+| --- | --- |
+| [Prebuilt Docker image](docs/deploy/docker-image.md) | Anything with Docker: `amd64`/`arm64`, no build, easy updates and rollback |
+| [OpenMediaVault](docs/deploy/openmediavault.md) | The OMV Compose plugin, all from the web UI |
+| [Docker, built from a checkout](docs/deploy/from-source-docker.md) | Running a version you changed yourself |
+| [Bare Node](docs/deploy/from-source-node.md) | A host that already runs Node 22+ (systemd) |
 
-# copy docker-compose.yml alongside, then create .env next to it:
-cat > .env <<EOF
-SKINHQ_SESSION_KEY=<the hex from above>
-CSFLOAT_API_KEY=<optional, csfloat.com key>
-EOF
+Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
+**[docs/deploy/](docs/deploy/README.md)**. Three rules apply to every route:
 
-docker compose up -d          # pulls ghcr.io/ackervekenbm/skin-hq and runs it
-```
-
-Then open <http://localhost:8090>. The image is multi-stage: the app is
-compiled in `node:22-alpine`, then run by `node:22-alpine` running the
-Express server (API + static client) as the unprivileged `node` user; a data
-folder left behind by an older, root-run image is handed over on start. No secrets are baked into the image;
-compose injects them from the server's `.env` at runtime. Data lives in the
-Docker volume `skin-hq-data`, so redeploys keep your session and cache.
-
-> If the repo is private, log into GHCR first:
-> `echo $GITHUB_TOKEN | docker login ghcr.io -u <owner> --password-stdin`.
-> Updating: `docker compose pull && docker compose up -d`.
-
-OpenMediaVault (OMV) has its own walkthrough with file placement,
-troubleshooting and the upgrade path: `docs/deploy-openmediavault.md`.
+- **Keep it on your LAN or tailnet.** SkinHQ has no login and holds your
+  signed-in Steam session, so anyone who can open it can sell your items
+  ([why](docs/deploy/README.md#keep-it-on-your-lan-or-tailnet)).
+- **Keep `SKINHQ_SESSION_KEY`** (make one with `openssl rand -hex 32`). It
+  encrypts the stored Steam session; lose it and you sign in again.
+- **Keep the data folder** (`/app/data` in the image). It holds the session
+  and the cache; updates keep it as long as the new container uses the same
+  folder or volume.
 
 ## Scripts
 
@@ -98,6 +88,7 @@ troubleshooting and the upgrade path: `docs/deploy-openmediavault.md`.
 ├── eslint.config.js / tsconfig.json / tsconfig.server.json / vite.config.ts
 ├── index.html                     # app shell
 ├── docs/plan.md                   # living plan — updated as the app evolves
+├── docs/deploy/                   # deployment guides, one per route (image, OMV, source, Node) + HTTPS, operations, troubleshooting
 └── src/
     ├── server/                    # Express + SQLite + Steam session + price providers
     │   ├── index.ts               # bootstrap + routes
