@@ -19,7 +19,9 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
   **Refresh prices** in an item's detail view fetches that one item right
   away instead of waiting for the next sync.
 - **Listing manager** — your active Steam Market listings; sell/cancel with
-  a "awaiting your confirmation in Steam Mobile" flow.
+  a "awaiting your confirmation in Steam Mobile" flow. To change the price
+  of a listed item, type the new one and press **Relist**: the app cancels
+  the old listing and lists it again for you to approve.
 - **SQLite cache** — everything synced by paced background jobs; the UI
   never blocks on live Steam calls. Prices are kept for 90 days (one per day,
   plus the newest), so the file stays small. A failed price fetch keeps the

@@ -4,7 +4,8 @@ import path from 'node:path'
 import './db'
 import * as steam from './steam'
 import { listItems } from './db'
-import { clearPendingSell, forgetListing, markPendingSell, refreshListings } from './listings'
+import { forgetListing, refreshListings } from './listings'
+import { relist, sellAndTrack } from './selling'
 import { buildGrid, refreshItemPrices, startAutoSync, sync } from './sync'
 import { buildCompare } from './compare'
 import { isAllowedHost, isCrossSiteWrite, isSteamId, parseAllowedHosts } from './guard'
@@ -144,33 +145,28 @@ app.post('/api/sell', async (req, res) => {
     res.status(400).json({ error: 'assetid and a whole, positive price in cents are required' })
     return
   }
-  // A retried sell supersedes any earlier attempt for the same asset, so drop
-  // the stale pending row before asking Steam again.
-  clearPendingSell(assetid)
   let result: steam.SellResult
   try {
-    result = await steam.sellItem(assetid, price, contextid && contextid !== '2' ? contextid : undefined)
+    result = await sellAndTrack(assetid, contextid ?? undefined, price)
   } catch (err) {
     res.status(401).json({ error: (err as Error).message })
     return
   }
-  if (!result.success) {
-    res.json(result)
+  res.json(result.success ? { ...result, pending: true } : result)
+})
+
+app.post('/api/relist', async (req, res) => {
+  const { listingid, assetid, price } = req.body as { listingid?: unknown; assetid?: unknown; price?: unknown }
+  if (!isSteamId(listingid) || !isSteamId(assetid) || typeof price !== 'number' || !Number.isInteger(price) || price <= 0) {
+    res.status(400).json({ error: 'listingid, assetid and a whole, positive price in cents are required' })
     return
   }
-  // Steam accepted the sell but will not list it until you approve it in the
-  // Steam Mobile app. Remember that so the grid can say "awaiting approval"
-  // instead of offering to sell an item that is already committed, and start
-  // watching for it to become a listing (or be rejected).
-  const item = listItems().find((i) => i.assetid === assetid)
-  markPendingSell({ assetid, market_hash_name: item?.market_hash_name ?? null, price_cents: price })
-  if (!result.needs_mobile_confirmation) {
-    // Steam listed it outright, so the listing should already exist — confirm
-    // immediately instead of waiting out the backoff.
-    // refreshListings never rejects: failures come back as { ok: false }.
-    void refreshListings()
+  try {
+    res.json(await relist(listingid, assetid, price))
+  } catch (err) {
+    // Only the cancel can throw here (no session), so nothing changed.
+    res.status(401).json({ error: (err as Error).message })
   }
-  res.json({ ...result, pending: true })
 })
 
 app.post('/api/cancel', async (req, res) => {

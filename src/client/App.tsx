@@ -5,6 +5,7 @@ import {
   eurosToCents,
   formatAmount,
   formatAutoSyncMin,
+  formatClock,
   formatEuro,
   formatFloat,
   formatGridPrice,
@@ -16,6 +17,7 @@ import {
   type GridPrice,
   type StickerRef,
 } from './format'
+import { Clock } from './Clock'
 import { filterItems, STATUS_FILTERS, type StatusFilter } from './filter'
 import { steamBuyerPriceFromSeller } from '../shared/fees'
 import { groupByRarity, type RarityGroup } from './grouping'
@@ -537,9 +539,9 @@ export default function App() {
     }
   }, [status?.loggedIn, syncWatching, loadGrid, refreshGrid, pushLog])
 
-  async function doSell(item: GridItem) {
+  async function doSell(item: GridItem, retryCents?: number) {
     if (!canSell(item) || sellingIds.includes(item.assetid)) return
-    const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
+    const priceCents = retryCents ?? eurosToCents(sellPrices[item.assetid] ?? '')
     if (priceCents == null) {
       pushLog('err', `sell ${item.name}: enter a positive price in euros (e.g. 12,50)`)
       return
@@ -565,6 +567,38 @@ export default function App() {
       }
     } catch (err) {
       pushLog('err', `sell ${item.name}: ${(err as Error).message}`)
+    } finally {
+      setSellingIds((prev) => prev.filter((id) => id !== item.assetid))
+    }
+  }
+
+  // Repricing a listed item: Steam has no relist, so the server cancels the
+  // listing and sells again at the new price (approved in Steam Mobile again).
+  async function doRelist(item: GridItem) {
+    if (!item.listing || sellingIds.includes(item.assetid)) return
+    const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
+    if (priceCents == null) {
+      pushLog('err', `relist ${item.name}: enter a positive price in euros (e.g. 12,50)`)
+      return
+    }
+    setSellingIds((prev) => [...prev, item.assetid])
+    try {
+      const r = await api<{ step: 'cancel' | 'sell'; success: boolean; needs_mobile_confirmation?: boolean; message?: string }>(
+        '/api/relist',
+        { method: 'POST', body: JSON.stringify({ listingid: item.listing.listingid, assetid: item.assetid, price: priceCents }) },
+      )
+      if (r.step === 'sell' && r.success) {
+        knownPending.current.add(item.assetid)
+        pushLog(
+          r.needs_mobile_confirmation ? 'warn' : 'ok',
+          `relist ${item.name} @ ${formatEuro(priceCents)}: old listing cancelled${r.needs_mobile_confirmation ? ', approve the new one in Steam Mobile' : ', listed'}`,
+        )
+      } else {
+        pushLog('err', `relist ${item.name}: ${r.message ?? 'failed'}`)
+      }
+      await refreshGrid()
+    } catch (err) {
+      pushLog('err', `relist ${item.name}: ${(err as Error).message}`)
     } finally {
       setSellingIds((prev) => prev.filter((id) => id !== item.assetid))
     }
@@ -804,6 +838,7 @@ export default function App() {
             {state === 'awaiting' ? (
               <span className="pending-note" title="Steam is holding this sell until you approve it in the Steam Mobile app">
                 Approve in Steam Mobile
+                {item.pending && <Clock>{(now) => ` · ${formatClock(now - new Date(item.pending!.created_at).getTime())}`}</Clock>}
               </span>
             ) : (
               `prices synced ${item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}`
@@ -826,6 +861,9 @@ export default function App() {
     const current = grid?.items.find((i) => i.assetid === item.assetid) ?? item
     const state = itemState(current)
     const sellable = canSell(current)
+    const listed = canCancel(current) && current.listing != null
+    const priceable = sellable || listed
+    const submit = () => void (listed ? doRelist(current) : doSell(current))
     const chips = quickPrices(current.prices.steam)
     const typedAsk = eurosToCents(sellPrices[current.assetid] ?? '')
     const wear = wearOf(item.market_hash_name)
@@ -993,20 +1031,51 @@ export default function App() {
             )}
           </div>
 
-          {state === 'awaiting' && (
-            <p className="hint">
+          {state === 'awaiting' && current.pending && (
+            <p className="hint" aria-live="off">
               Steam is holding this sell until you approve it in the Steam Mobile app. Nothing is live on the market yet, and
-              this card updates by itself once you do.
+              this card updates by itself once you do.{' '}
+              <Clock>
+                {(now) => {
+                  const p = current.pending!
+                  const at = (iso: string) => new Date(iso).getTime()
+                  return (
+                    <>
+                      <span className="mono">Waiting {formatClock(now - at(p.created_at))}.</span>
+                      {p.checks_at && p.gives_up_at && (
+                        <>
+                          {' '}
+                          {now < at(p.checks_at)
+                            ? `The app asks Steam whether it went through in ${formatClock(at(p.checks_at) - now)}`
+                            : 'The app is checking with Steam'}
+                          , and stops waiting in {formatClock(at(p.gives_up_at) - now)}.
+                        </>
+                      )}
+                    </>
+                  )
+                }}
+              </Clock>
             </p>
           )}
           {state === 'rejected' && (
-            <p className="hint hint-warn">
-              Steam rejected or expired that sell, so nothing was listed. The item is available again — set a price and try
-              again.
-            </p>
+            <div className="hint hint-warn retry">
+              <p>
+                That sell wasn't approved in Steam Mobile: it was declined there, or the confirmation expired (Steam doesn't say
+                which). Nothing was listed and the item is available again.
+              </p>
+              {current.pending?.price_cents != null && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => void doSell(current, current.pending?.price_cents ?? undefined)}
+                  disabled={sellingIds.includes(current.assetid)}
+                >
+                  Retry at {formatEuro(current.pending.price_cents)}
+                </button>
+              )}
+            </div>
           )}
 
-          {sellable && chips.length > 0 && (
+          {priceable && chips.length > 0 && (
             <div className="quick-prices">
               <span className="quick-prices-label">Quick ask · you get / buyers see</span>
               {chips.map((chip) => (
@@ -1034,24 +1103,25 @@ export default function App() {
 
           <div className="sell-row">
             <input
-              placeholder={sellable ? 'Your ask in €' : '—'}
+              placeholder={listed ? 'New ask in €' : sellable ? 'Your ask in €' : '—'}
               value={sellPrices[current.assetid] ?? ''}
               onChange={(e) => setSellPrices((prev) => ({ ...prev, [current.assetid]: e.target.value }))}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') void doSell(current)
+                if (e.key === 'Enter') submit()
               }}
-              disabled={!sellable || sellingIds.includes(current.assetid)}
+              disabled={!priceable || sellingIds.includes(current.assetid)}
               inputMode="decimal"
               autoComplete="off"
               aria-label="Your ask price in euros"
             />
-            {sellable && (
+            {priceable && (
               <button
                 className="btn btn-primary"
-                onClick={() => void doSell(current)}
+                onClick={submit}
                 disabled={sellingIds.includes(current.assetid)}
+                title={listed ? 'Cancel the current listing and list it again at this price' : undefined}
               >
-                {sellingIds.includes(current.assetid) ? 'Sending…' : state === 'rejected' ? 'Try again' : 'Sell'}
+                {sellingIds.includes(current.assetid) ? 'Sending…' : listed ? 'Relist' : state === 'rejected' ? 'Try again' : 'Sell'}
               </button>
             )}
             {canCancel(current) && current.listing && (
@@ -1060,11 +1130,12 @@ export default function App() {
               </button>
             )}
           </div>
-          {sellable && (
+          {priceable && (
             <p className="footnote">
               You type the amount you receive; Steam adds its fee on top
               {typedAsk != null ? `, so buyers will see ${formatEuro(steamBuyerPriceFromSeller(typedAsk))}.` : '.'} The quick
               asks above already account for it.
+              {listed && ' Relist cancels the current listing first, then lists it at the new price for you to approve in Steam Mobile.'}
             </p>
           )}
         </div>
