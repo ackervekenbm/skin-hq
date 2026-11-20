@@ -112,6 +112,11 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   combines `priceoverview` with the SSR orderbook (`marketOrderSpread`);
   CSFloat provider is a best-effort raw fetch. Provider interface:
   `{ name, getItem(hash) }`.
+- `src/server/selling.ts` — `sellAndTrack()` (sell + pending-sell bookkeeping,
+  used by `/api/sell`) and `relist()` (`/api/relist`: check the listing is
+  that asset, cancel, re-read inventory contexts, pause, sell from the
+  asset's current context; a failed re-sell reports that the item is now
+  unlisted).
 - `src/server/guard.ts` — the API has no login, so every POST under `/api`
   must be JSON and must not carry a cross-site `Sec-Fetch-Site`; this keeps
   other websites in the same browser from selling, cancelling or logging out.
