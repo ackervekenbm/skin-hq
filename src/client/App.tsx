@@ -586,7 +586,7 @@ export default function App() {
         { method: 'POST', body: JSON.stringify({ listingid: item.listing.listingid, assetid: item.assetid, price: priceCents }) },
       )
       if (r.step === 'sell' && r.success) {
-        knownPending.current.set(item.assetid, 'awaiting')
+        knownPending.current.add(item.assetid)
         pushLog(
           r.needs_mobile_confirmation ? 'warn' : 'ok',
           `relist ${item.name} @ ${formatEuro(priceCents)}: old listing cancelled${r.needs_mobile_confirmation ? ', approve the new one in Steam Mobile' : ', listed'}`,
