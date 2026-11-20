@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { canCancel, canSell, itemState, ITEM_STATE_LABEL, type ListingStateInput } from '../src/client/itemState'
+import { canCancel, canSell, itemState, ITEM_STATE_LABEL, resolvedSells, type ListingStateInput } from '../src/client/itemState'
 
 function item(over: Partial<ListingStateInput> = {}): ListingStateInput {
   return { listing: null, pending: null, marketable: true, ...over }
@@ -61,5 +61,28 @@ describe('canCancel', () => {
     // A pending sell has no listingid yet, so there is nothing to cancel.
     expect(canCancel(awaiting())).toBe(false)
     expect(canCancel(rejected())).toBe(false)
+  })
+})
+describe('resolvedSells', () => {
+  const withId = (assetid: string, it: ListingStateInput) => ({ ...it, assetid })
+
+  it('reports nothing while a sell is still awaiting, and keeps watching it', () => {
+    const r = resolvedSells(new Set(['A']), [withId('A', awaiting())])
+    expect(r).toEqual({ listed: [], rejected: [], awaiting: new Set(['A']) })
+  })
+
+  it('reports an approved sell as listed and a declined one as rejected, once', () => {
+    const items = [withId('A', listed()), withId('B', rejected()), withId('C', awaiting())]
+    const first = resolvedSells(new Set(['A', 'B']), items)
+    expect(first.listed.map((i) => i.assetid)).toEqual(['A'])
+    expect(first.rejected.map((i) => i.assetid)).toEqual(['B'])
+    expect(first.awaiting).toEqual(new Set(['C']))
+    // Next tick: A and B are no longer watched, so they are not reported again.
+    expect(resolvedSells(first.awaiting, items)).toEqual({ listed: [], rejected: [], awaiting: new Set(['C']) })
+  })
+
+  it('ignores items that were not awaiting, and items that left the inventory', () => {
+    const r = resolvedSells(new Set(['gone']), [withId('A', listed()), withId('B', rejected())])
+    expect(r).toEqual({ listed: [], rejected: [], awaiting: new Set() })
   })
 })

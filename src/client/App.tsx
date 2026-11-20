@@ -17,7 +17,7 @@ import {
   type StickerRef,
 } from './format'
 import { groupByRarity, type RarityGroup } from './grouping'
-import { canCancel, canSell, itemState, ITEM_STATE_LABEL, type PendingView } from './itemState'
+import { canCancel, canSell, itemState, ITEM_STATE_LABEL, resolvedSells, type PendingView } from './itemState'
 
 interface AuthStatus {
   loggedIn: boolean
@@ -312,16 +312,29 @@ export default function App() {
     return true
   }
 
+  // Several pollers and every action re-read the grid. Each fetch gets a
+  // number and only a response newer than the last one shown is applied, so a
+  // slow older response can't roll the grid back; a poll tick skips while a
+  // fetch is out; and an unchanged grid keeps its object, so nothing re-renders.
+  const gridFetch = useRef({ seq: 0, applied: 0, inFlight: 0 })
   const refreshGrid = useCallback(
-    async (opts?: { silent?: boolean }) => {
-      let g: GridResponse | null = null
+    async (opts?: { silent?: boolean; poll?: boolean }): Promise<GridResponse | null> => {
+      const f = gridFetch.current
+      if (opts?.poll && f.inFlight > 0) return null
+      const seq = ++f.seq
+      f.inFlight++
       try {
-        g = await api<GridResponse>('/api/grid')
-        setGrid(g)
+        const g = await api<GridResponse>('/api/grid')
+        if (seq < f.applied) return null
+        f.applied = seq
+        setGrid((prev) => (prev && JSON.stringify(prev) === JSON.stringify(g) ? prev : g))
+        return g
       } catch (err) {
         if (!opts?.silent) pushLog('err', `grid: ${(err as Error).message}`)
+        return null
+      } finally {
+        f.inFlight--
       }
-      return g
     },
     [pushLog],
   )
@@ -415,7 +428,7 @@ export default function App() {
           setGridLoading(false)
           pushLog('ok', 'Sync finished')
         } else {
-          await refreshGrid()
+          await refreshGrid({ poll: true })
         }
       } catch (err) {
         pushLog('err', `sync status: ${(err as Error).message}`)
@@ -438,35 +451,23 @@ export default function App() {
   // flips within seconds of the approval rather than at the next hourly sync.
   // The poll stops on its own as soon as nothing is pending.
   const awaitingCount = useMemo(() => (grid?.items ?? []).filter((i) => itemState(i) === 'awaiting').length, [grid])
-  const knownPending = useRef<Map<string, string>>(new Map())
+  const knownPending = useRef<Set<string>>(new Set())
   useEffect(() => {
     if (awaitingCount === 0) return undefined
     const timer = setInterval(() => {
-      void api<GridResponse>('/api/grid')
-        .then((g) => {
-          // Say what happened to the sell the moment it resolves, either way.
-          // Without this a rejected confirmation is invisible: the badge just
-          // quietly goes back to "sellable" and looks like the button did nothing.
-          const next = new Map<string, string>()
-          for (const item of g.items) {
-            const state = itemState(item)
-            if (state === 'awaiting' || state === 'rejected') next.set(item.assetid, state)
-          }
-          for (const [assetid, state] of next) {
-            if (knownPending.current.get(assetid) !== 'awaiting') continue
-            const name = g.items.find((i) => i.assetid === assetid)?.name ?? assetid
-            if (state === 'listed') pushLog('ok', `sell ${name}: approved in Steam Mobile — listed`)
-            else pushLog('err', `sell ${name}: Steam rejected or expired it — you can list it again`)
-          }
-          knownPending.current = next
-          setGrid(g)
-        })
-        .catch(() => {
-          /* transient — next tick */
-        })
+      void refreshGrid({ silent: true, poll: true }).then((g) => {
+        if (!g) return
+        // Say what happened to the sell the moment it resolves, either way.
+        // Without this a rejected confirmation is invisible: the badge just
+        // quietly goes back to "sellable" and looks like the button did nothing.
+        const r = resolvedSells(knownPending.current, g.items)
+        for (const i of r.listed) pushLog('ok', `sell ${i.name}: approved in Steam Mobile — listed`)
+        for (const i of r.rejected) pushLog('err', `sell ${i.name}: Steam rejected or expired it — you can list it again`)
+        knownPending.current = r.awaiting
+      })
     }, 2500)
     return () => clearInterval(timer)
-  }, [awaitingCount, pushLog])
+  }, [awaitingCount, refreshGrid, pushLog])
 
   // Auto-sync visibility: the server runs scheduled syncs this tab didn't
   // start. Poll /api/sync/status and surface progress + refresh the grid when
@@ -482,7 +483,7 @@ export default function App() {
         if (cancelled) return
         if (s.running) {
           setSyncStatus(s)
-          await refreshGrid()
+          await refreshGrid({ silent: true, poll: true })
         } else if (s.completedRuns != null && lastRunCount.current != null) {
           if (s.completedRuns > lastRunCount.current) {
             // A run finished while we weren't watching it — refresh the grid.
@@ -526,7 +527,7 @@ export default function App() {
       // the card has to stop offering to sell it while Steam waits for your
       // approval. This is what was missing — the grid used to keep reporting the
       // pre-sell state until the next hourly sync.
-      knownPending.current.set(item.assetid, 'awaiting')
+      knownPending.current.add(item.assetid)
       await refreshGrid()
       if (r.needs_mobile_confirmation) {
         pushLog('warn', `sell ${item.name} @ ${formatEuro(priceCents)}: approve it in Steam Mobile to go live`)
