@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isCrossSiteWrite, isSteamId } from '../src/server/guard'
+import { isAllowedHost, isCrossSiteWrite, isSteamId, parseAllowedHosts } from '../src/server/guard'
 
 const headers = (h: Record<string, string>) => (name: string) => h[name]
 
@@ -32,5 +32,27 @@ describe('isSteamId', () => {
     expect(isSteamId('7612345678901234567')).toBe(true)
     expect(isSteamId('16')).toBe(true)
     for (const bad of ['', '12/../x', '12a', ' 12', 12, null, undefined, '1'.repeat(21)]) expect(isSteamId(bad)).toBe(false)
+  })
+})
+
+describe('isAllowedHost', () => {
+  const none = parseAllowedHosts(undefined)
+
+  it('answers to localhost and IP addresses, with or without a port', () => {
+    for (const host of ['localhost', 'localhost:5173', '127.0.0.1:3000', '192.168.1.20:8090', '[::1]:3000', '[::1]']) {
+      expect(isAllowedHost(host, none)).toBe(true)
+    }
+  })
+
+  it('refuses any other name unless it is listed, so a rebound hostile name is refused', () => {
+    expect(isAllowedHost('evil.example:8090', none)).toBe(false)
+    expect(isAllowedHost('nas.local', none)).toBe(false)
+    expect(isAllowedHost(undefined, none)).toBe(false)
+    const listed = parseAllowedHosts(' Skins.Example.com , nas.local,')
+    expect(isAllowedHost('skins.example.com', listed)).toBe(true)
+    expect(isAllowedHost('NAS.local:8090', listed)).toBe(true)
+    expect(isAllowedHost('evil.example', listed)).toBe(false)
+    // A listed name's subdomain is a different name.
+    expect(isAllowedHost('x.nas.local', listed)).toBe(false)
   })
 })
