@@ -80,7 +80,9 @@ db.exec(`
 
   // Migrations for pre-P1-B databases: add the liquidity/float columns that
   // the original price_snapshots table did not have, plus the own-item float
-  // columns on items. Idempotent.
+  // columns on items. Idempotent. Only ever add nullable columns here: a
+  // running install upgrades in place on start (tests/dbMigration.test.ts
+  // opens an old-schema file and starts twice on it).
   const cols = (db.prepare('PRAGMA table_info(price_snapshots)').all() as Array<{ name: string }>).map((c) => c.name)
   const addCol = (name: string, ddl: string): void => {
     if (!cols.includes(name)) db.exec(`ALTER TABLE price_snapshots ADD COLUMN ${ddl}`)
