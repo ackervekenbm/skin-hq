@@ -5,6 +5,7 @@ import {
   eurosToCents,
   formatAmount,
   formatAutoSyncMin,
+  formatClock,
   formatEuro,
   formatFloat,
   formatGridPrice,
@@ -479,6 +480,14 @@ export default function App() {
   // The poll stops on its own as soon as nothing is pending.
   const awaitingCount = useMemo(() => (grid?.items ?? []).filter((i) => itemState(i) === 'awaiting').length, [grid])
   const knownPending = useRef<Set<string>>(new Set())
+  // A clock for the "waiting for approval" countdowns; only ticks while a sell is pending.
+  const [now, setNow] = useState(() => Date.now())
+  useEffect(() => {
+    if (awaitingCount === 0) return undefined
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [awaitingCount])
+
   useEffect(() => {
     if (awaitingCount === 0) return undefined
     const timer = setInterval(() => {
@@ -537,9 +546,9 @@ export default function App() {
     }
   }, [status?.loggedIn, syncWatching, loadGrid, refreshGrid, pushLog])
 
-  async function doSell(item: GridItem) {
+  async function doSell(item: GridItem, retryCents?: number) {
     if (!canSell(item) || sellingIds.includes(item.assetid)) return
-    const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
+    const priceCents = retryCents ?? eurosToCents(sellPrices[item.assetid] ?? '')
     if (priceCents == null) {
       pushLog('err', `sell ${item.name}: enter a positive price in euros (e.g. 12,50)`)
       return
@@ -804,6 +813,7 @@ export default function App() {
             {state === 'awaiting' ? (
               <span className="pending-note" title="Steam is holding this sell until you approve it in the Steam Mobile app">
                 Approve in Steam Mobile
+                {item.pending && ` · ${formatClock(now - new Date(item.pending.created_at).getTime())}`}
               </span>
             ) : (
               `prices synced ${item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}`
@@ -993,17 +1003,38 @@ export default function App() {
             )}
           </div>
 
-          {state === 'awaiting' && (
-            <p className="hint">
+          {state === 'awaiting' && current.pending && (
+            <p className="hint" aria-live="off">
               Steam is holding this sell until you approve it in the Steam Mobile app. Nothing is live on the market yet, and
-              this card updates by itself once you do.
+              this card updates by itself once you do.{' '}
+              <span className="mono">Waiting {formatClock(now - new Date(current.pending.created_at).getTime())}.</span>
+              {current.pending.checks_at && current.pending.gives_up_at && (
+                <>
+                  {' '}
+                  {now < new Date(current.pending.checks_at).getTime()
+                    ? `The app asks Steam whether it went through in ${formatClock(new Date(current.pending.checks_at).getTime() - now)}`
+                    : 'The app is checking with Steam'}
+                  , and stops waiting in {formatClock(new Date(current.pending.gives_up_at).getTime() - now)}.
+                </>
+              )}
             </p>
           )}
           {state === 'rejected' && (
-            <p className="hint hint-warn">
-              Steam rejected or expired that sell, so nothing was listed. The item is available again — set a price and try
-              again.
-            </p>
+            <div className="hint hint-warn retry">
+              <p>
+                That sell wasn't approved in Steam Mobile: it was declined there, or the confirmation expired (Steam doesn't say
+                which). Nothing was listed and the item is available again.
+              </p>
+              {current.pending?.price_cents != null && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => void doSell(current, current.pending?.price_cents ?? undefined)}
+                  disabled={sellingIds.includes(current.assetid)}
+                >
+                  Retry at {formatEuro(current.pending.price_cents)}
+                </button>
+              )}
+            </div>
           )}
 
           {sellable && chips.length > 0 && (

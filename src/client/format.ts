@@ -170,3 +170,12 @@ export function quickPrices(steam: GridPrice | null | undefined): QuickPrice[] {
   if (buyAsk != null) add('At top buy', buyAsk, `Best standing buy order is ${formatEuro(steam.highest_buy_cents)}`)
   return chips
 }
+
+/** A duration as m:ss (or h:mm:ss), never negative: 42_000 → "0:42". */
+export function formatClock(ms: number): string {
+  const total = Math.max(0, Math.floor(ms / 1000))
+  const h = Math.floor(total / 3600)
+  const m = Math.floor((total % 3600) / 60)
+  const s = String(total % 60).padStart(2, '0')
+  return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${s}` : `${m}:${s}`
+}

@@ -135,6 +135,12 @@ export function clearPendingSell(assetid: string): void {
   deletePendingListings([assetid])
 }
 
+/** The two moments a pending sell's watch hinges on, for the UI's countdown. */
+export function pendingDeadlines(createdAt: string): { checks_at: string; gives_up_at: string } {
+  const t = new Date(createdAt).getTime()
+  return { checks_at: new Date(t + DECLINE_GRACE_MS).toISOString(), gives_up_at: new Date(t + PENDING_TTL_MS).toISOString() }
+}
+
 export function pendingByAssetId(): Map<string, PendingListingRow> {
   return new Map(listPendingListings().map((p) => [p.assetid, p]))
 }
