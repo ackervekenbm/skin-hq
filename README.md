@@ -16,6 +16,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
   restricted items.
 - **Price comparison** — per item: Steam lowest + volume, buy-order depth,
   and third-party listings (net after fees) on the pluggable provider.
+  **Refresh prices** in an item's detail view fetches that one item right
+  away instead of waiting for the next sync.
 - **Listing manager** — your active Steam Market listings; sell/cancel with
   a "awaiting your confirmation in Steam Mobile" flow.
 - **SQLite cache** — everything synced by paced background jobs; the UI
