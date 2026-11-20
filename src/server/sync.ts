@@ -3,6 +3,7 @@ import {
   latestPriceSnapshots,
   listItems,
   listMyListings,
+  prunePriceSnapshots,
   type PriceSnapshotRow,
 } from './db'
 import { pendingByAssetId, refreshListings } from './listings'
@@ -377,8 +378,9 @@ class SyncEngine {
     }
 
     this.last.prices = new Date().toISOString()
+    const pruned = prunePriceSnapshots()
     console.info(
-      `[sync] prices: ${okCount}/${this.current} steam hashes snapshotted in this pass${aborted ? ' (aborted early on 429s)' : ''}, ${candidates.length - toPrice.length} fresh skipped`,
+      `[sync] prices: ${okCount}/${this.current} steam hashes snapshotted in this pass${aborted ? ' (aborted early on 429s)' : ''}, ${candidates.length - toPrice.length} fresh skipped, ${pruned} old snapshots pruned`,
     )
   }
 }
@@ -520,7 +522,11 @@ export function buildGrid(): GridResponse {
     })
     .sort(
       (a, b) =>
-        (a.rarity?.rank ?? 99) - (b.rarity?.rank ?? 99) || a.market_hash_name.localeCompare(b.market_hash_name),
+        (a.rarity?.rank ?? 99) - (b.rarity?.rank ?? 99) ||
+        a.market_hash_name.localeCompare(b.market_hash_name) ||
+        // Copies of one skin would otherwise follow updated_at, which every
+        // inventory sync rewrites, so they swapped places between polls.
+        a.assetid.localeCompare(b.assetid),
     )
 
   return {

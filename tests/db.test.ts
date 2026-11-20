@@ -83,6 +83,30 @@ describe('upsertItems', () => {
     expect(db.getItem('A1')?.own_float).toBe(0.0312)
   })
 
+  // Stickers follow the same rule as floats: a pass that read the item's
+  // certificate always sends a JSON payload (an empty list when nothing is
+  // attached), so null only ever means "not read this time".
+  it('replaces stickers when they change, including when they are scraped off', () => {
+    const two = JSON.stringify({ stickers: [{ stickerId: 1, slot: 0 }, { stickerId: 2, slot: 1 }] })
+    const one = JSON.stringify({ stickers: [{ stickerId: 2, slot: 1 }] })
+    const none = JSON.stringify({ stickers: [] })
+    db.upsertItems([item({ own_float: 0.2, own_stickers: two })])
+    db.upsertItems([item({ own_float: 0.2, own_stickers: one })])
+    expect(db.getItem('A1')?.own_stickers).toBe(one)
+    db.upsertItems([item({ own_float: 0.2, own_stickers: none })])
+    expect(db.getItem('A1')?.own_stickers).toBe(none)
+  })
+
+  it('keeps stickers through a pass that could not read them, and a charm added later replaces them', () => {
+    const sticker = JSON.stringify({ stickers: [{ stickerId: 1, slot: 0 }] })
+    db.upsertItems([item({ own_float: 0.2, own_stickers: sticker })])
+    db.upsertItems([item({ own_float: null, own_stickers: null })])
+    expect(db.getItem('A1')?.own_stickers).toBe(sticker)
+    const withCharm = JSON.stringify({ stickers: [{ stickerId: 1, slot: 0 }], keychains: [{ stickerId: 9, slot: 0, pattern: 4 }] })
+    db.upsertItems([item({ own_float: 0.2, own_stickers: withCharm })])
+    expect(db.getItem('A1')?.own_stickers).toBe(withCharm)
+  })
+
   it('treats a real float of zero as a value, not as missing', () => {
     db.upsertItems([item({ own_float: 0.1234 })])
     db.upsertItems([item({ own_float: 0 })])
@@ -204,5 +228,43 @@ describe('latestPriceSnapshots', () => {
       )
       .all('x', 'steam') as Array<{ detail: string }>
     expect(plan.map((p) => p.detail).join('\n')).toMatch(/COVERING INDEX idx_price_snapshots_latest/)
+  })
+})
+
+describe('prunePriceSnapshots', () => {
+  const at = (iso: string, hash: string, provider = 'steam', lowest = 100) => {
+    vi.setSystemTime(new Date(iso))
+    db.insertPriceSnapshot({ market_hash_name: hash, provider, lowest_cents: lowest })
+  }
+  const rows = (hash: string) =>
+    db.db
+      .prepare('SELECT provider, fetched_at FROM price_snapshots WHERE market_hash_name = ? ORDER BY fetched_at')
+      .all(hash) as Array<{ provider: string; fetched_at: string }>
+
+  it('keeps the newest per item and provider plus the last of each day within 90 days', () => {
+    vi.useFakeTimers()
+    try {
+      // Older than 90 days: only survives if it is the newest of its provider.
+      at('2026-01-01T08:00:00Z', 'P1')
+      at('2026-01-01T09:00:00Z', 'P1', 'csfloat')
+      // Within the window: two on one day, one on the next.
+      at('2026-11-01T06:00:00Z', 'P1')
+      at('2026-11-01T18:00:00Z', 'P1')
+      at('2026-11-02T06:00:00Z', 'P1')
+      // Another item, many fetches today.
+      for (const h of ['00', '06', '12', '18']) at(`2026-11-20T${h}:00:00Z`, 'P2')
+
+      expect(db.prunePriceSnapshots(new Date('2026-11-20T20:00:00Z'))).toBe(5)
+      expect(rows('P1')).toEqual([
+        { provider: 'csfloat', fetched_at: '2026-01-01T09:00:00.000Z' },
+        { provider: 'steam', fetched_at: '2026-11-01T18:00:00.000Z' },
+        { provider: 'steam', fetched_at: '2026-11-02T06:00:00.000Z' },
+      ])
+      expect(rows('P2')).toEqual([{ provider: 'steam', fetched_at: '2026-11-20T18:00:00.000Z' }])
+      // Running it again changes nothing.
+      expect(db.prunePriceSnapshots(new Date('2026-11-20T20:00:00Z'))).toBe(0)
+    } finally {
+      vi.useRealTimers()
+    }
   })
 })

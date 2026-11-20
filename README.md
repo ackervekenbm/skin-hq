@@ -19,7 +19,8 @@ them on your phone in the Steam Mobile app — no automated 2FA, no maFile.
 - **Listing manager** — your active Steam Market listings; sell/cancel with
   a "awaiting your confirmation in Steam Mobile" flow.
 - **SQLite cache** — everything synced by paced background jobs; the UI
-  never blocks on live Steam calls.
+  never blocks on live Steam calls. Prices are kept for 90 days (one per day,
+  plus the newest), so the file stays small.
 - **About** — Settings shows which build is running (commit and build time)
   with links to the source, the issue tracker, the author and the license.
 
@@ -122,6 +123,9 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
   key lives in your `.env` only, never in the repo.
 - The dev server binds to `127.0.0.1`; the Docker container exposes `8090`
   on your local host by default.
+- The app only answers to `localhost`, IP addresses and the host names you
+  list in `SKINHQ_ALLOWED_HOSTS`, so a hostile website can't reach it by
+  pointing its own name at your server (DNS rebinding).
 
 ## Future ideas
 

@@ -80,7 +80,9 @@ db.exec(`
 
   // Migrations for pre-P1-B databases: add the liquidity/float columns that
   // the original price_snapshots table did not have, plus the own-item float
-  // columns on items. Idempotent.
+  // columns on items. Idempotent. Only ever add nullable columns here: a
+  // running install upgrades in place on start (tests/dbMigration.test.ts
+  // opens an old-schema file and starts twice on it).
   const cols = (db.prepare('PRAGMA table_info(price_snapshots)').all() as Array<{ name: string }>).map((c) => c.name)
   const addCol = (name: string, ddl: string): void => {
     if (!cols.includes(name)) db.exec(`ALTER TABLE price_snapshots ADD COLUMN ${ddl}`)
@@ -247,6 +249,25 @@ export function insertPriceSnapshot(input: PriceSnapshotInput): void {
     input.note ?? null,
     new Date().toISOString(),
   )
+}
+
+export const SNAPSHOT_HISTORY_DAYS = 90
+
+// Keeps the newest snapshot per item and provider (what the grid shows) plus
+// the last one of each day for SNAPSHOT_HISTORY_DAYS (price history), and
+// deletes the rest. Returns how many rows went.
+export function prunePriceSnapshots(now = new Date()): number {
+  const cutoff = new Date(now.getTime() - SNAPSHOT_HISTORY_DAYS * 86_400_000).toISOString()
+  return db
+    .prepare(
+      `DELETE FROM price_snapshots WHERE id NOT IN (
+         SELECT MAX(id) FROM price_snapshots GROUP BY market_hash_name, provider
+         UNION
+         SELECT MAX(id) FROM price_snapshots WHERE fetched_at >= ?
+           GROUP BY market_hash_name, provider, substr(fetched_at, 1, 10)
+       )`,
+    )
+    .run(cutoff).changes
 }
 
 export function latestPriceSnapshots(): { byItem: Map<string, Map<string, PriceSnapshotRow>>; latestAt: string | null } {
