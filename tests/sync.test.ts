@@ -19,6 +19,7 @@ const dbMock = vi.hoisted(() => ({
 // pending rows); stub it so buildGrid can be exercised without Steam or SQLite.
 const listingsMock = vi.hoisted(() => ({
   pendingByAssetId: vi.fn(() => new Map<string, PendingListingRow>()),
+  pendingDeadlines: vi.fn(() => ({ checks_at: 'C', gives_up_at: 'G' })),
   refreshListings: vi.fn(async () => ({ ok: true as const, total: 0, confirmed: [] })),
 }))
 
@@ -238,7 +239,7 @@ describe('buildGrid pending sells', () => {
 
     const grid = buildGrid()
     expect(grid.items).toHaveLength(1)
-    expect(grid.items[0].pending).toEqual({ state: 'awaiting', price_cents: 1250, created_at: '2026-09-25T00:00:00Z' })
+    expect(grid.items[0].pending).toEqual({ state: 'awaiting', price_cents: 1250, created_at: '2026-09-25T00:00:00Z', checks_at: 'C', gives_up_at: 'G' })
     expect(grid.items[0].listing).toBeNull()
     expect(grid.counts.pending).toBe(1)
   })

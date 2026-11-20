@@ -10,6 +10,8 @@ export interface PendingView {
   state: 'awaiting' | 'declined'
   price_cents: number | null
   created_at: string
+  checks_at?: string
+  gives_up_at?: string
 }
 
 export interface ListingStateInput {

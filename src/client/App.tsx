@@ -5,6 +5,7 @@ import {
   eurosToCents,
   formatAmount,
   formatAutoSyncMin,
+  formatClock,
   formatEuro,
   formatFloat,
   formatGridPrice,
@@ -16,6 +17,7 @@ import {
   type GridPrice,
   type StickerRef,
 } from './format'
+import { Clock } from './Clock'
 import { filterItems, STATUS_FILTERS, type StatusFilter } from './filter'
 import { steamBuyerPriceFromSeller } from '../shared/fees'
 import { groupByRarity, type RarityGroup } from './grouping'
@@ -537,9 +539,9 @@ export default function App() {
     }
   }, [status?.loggedIn, syncWatching, loadGrid, refreshGrid, pushLog])
 
-  async function doSell(item: GridItem) {
+  async function doSell(item: GridItem, retryCents?: number) {
     if (!canSell(item) || sellingIds.includes(item.assetid)) return
-    const priceCents = eurosToCents(sellPrices[item.assetid] ?? '')
+    const priceCents = retryCents ?? eurosToCents(sellPrices[item.assetid] ?? '')
     if (priceCents == null) {
       pushLog('err', `sell ${item.name}: enter a positive price in euros (e.g. 12,50)`)
       return
@@ -836,6 +838,7 @@ export default function App() {
             {state === 'awaiting' ? (
               <span className="pending-note" title="Steam is holding this sell until you approve it in the Steam Mobile app">
                 Approve in Steam Mobile
+                {item.pending && <Clock>{(now) => ` · ${formatClock(now - new Date(item.pending!.created_at).getTime())}`}</Clock>}
               </span>
             ) : (
               `prices synced ${item.pricesSyncedAt != null ? relTime(item.pricesSyncedAt) : 'never'}`
@@ -1028,17 +1031,48 @@ export default function App() {
             )}
           </div>
 
-          {state === 'awaiting' && (
-            <p className="hint">
+          {state === 'awaiting' && current.pending && (
+            <p className="hint" aria-live="off">
               Steam is holding this sell until you approve it in the Steam Mobile app. Nothing is live on the market yet, and
-              this card updates by itself once you do.
+              this card updates by itself once you do.{' '}
+              <Clock>
+                {(now) => {
+                  const p = current.pending!
+                  const at = (iso: string) => new Date(iso).getTime()
+                  return (
+                    <>
+                      <span className="mono">Waiting {formatClock(now - at(p.created_at))}.</span>
+                      {p.checks_at && p.gives_up_at && (
+                        <>
+                          {' '}
+                          {now < at(p.checks_at)
+                            ? `The app asks Steam whether it went through in ${formatClock(at(p.checks_at) - now)}`
+                            : 'The app is checking with Steam'}
+                          , and stops waiting in {formatClock(at(p.gives_up_at) - now)}.
+                        </>
+                      )}
+                    </>
+                  )
+                }}
+              </Clock>
             </p>
           )}
           {state === 'rejected' && (
-            <p className="hint hint-warn">
-              Steam rejected or expired that sell, so nothing was listed. The item is available again — set a price and try
-              again.
-            </p>
+            <div className="hint hint-warn retry">
+              <p>
+                That sell wasn't approved in Steam Mobile: it was declined there, or the confirmation expired (Steam doesn't say
+                which). Nothing was listed and the item is available again.
+              </p>
+              {current.pending?.price_cents != null && (
+                <button
+                  className="btn btn-primary btn-sm"
+                  onClick={() => void doSell(current, current.pending?.price_cents ?? undefined)}
+                  disabled={sellingIds.includes(current.assetid)}
+                >
+                  Retry at {formatEuro(current.pending.price_cents)}
+                </button>
+              )}
+            </div>
           )}
 
           {priceable && chips.length > 0 && (

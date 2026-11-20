@@ -6,7 +6,7 @@ import {
   prunePriceSnapshots,
   type PriceSnapshotRow,
 } from './db'
-import { pendingByAssetId, refreshListings } from './listings'
+import { pendingByAssetId, pendingDeadlines, refreshListings } from './listings'
 import type { ItemPrice, PriceProvider } from './price'
 import { providers } from './price'
 import * as steam from './steam'
@@ -45,6 +45,10 @@ export interface PendingView {
   state: 'awaiting' | 'declined'
   price_cents: number | null
   created_at: string
+  /** When the app first asks Steam whether the sell went through. */
+  checks_at: string
+  /** When the app stops waiting for an approval. */
+  gives_up_at: string
 }
 
 export interface GridResponse {
@@ -516,7 +520,7 @@ export function buildGrid(): GridResponse {
       const pending: PendingView | null =
         listing || !pendingRow
           ? null
-          : { state: pendingRow.state, price_cents: pendingRow.price_cents, created_at: pendingRow.created_at }
+          : { state: pendingRow.state, price_cents: pendingRow.price_cents, created_at: pendingRow.created_at, ...pendingDeadlines(pendingRow.created_at) }
       // All providers for a hash are snapshotted in the same pass, so the
       // latest fetched_at across them is "the moment this item's prices were
       // synced" (steam, CSFloat, ... together).

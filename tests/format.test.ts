@@ -10,6 +10,7 @@ import {
   formatGridPrice,
   isStatTrak,
   parseStickers,
+  formatClock,
   quickPrices,
   relTime,
   wearOf,
@@ -297,5 +298,16 @@ describe('quickPrices floor invariants', () => {
       expect(buyerPrice).toBeLessThanOrEqual(floor)
       expect(buyerPrice).toBeGreaterThan(floor - 20)
     }
+  })
+})
+
+describe('formatClock', () => {
+  it('formats m:ss, h:mm:ss, and clamps negatives to zero', () => {
+    expect(formatClock(0)).toBe('0:00')
+    expect(formatClock(42_000)).toBe('0:42')
+    expect(formatClock(90_999)).toBe('1:30')
+    expect(formatClock(30 * 60_000)).toBe('30:00')
+    expect(formatClock(3_725_000)).toBe('1:02:05')
+    expect(formatClock(-5_000)).toBe('0:00')
   })
 })
