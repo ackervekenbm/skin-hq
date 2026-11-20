@@ -1028,11 +1028,15 @@ export default function App() {
             <span className={`badge${state === 'listed' ? ' ok' : state === 'awaiting' || state === 'rejected' ? ' warn' : ''}`}>
               {ITEM_STATE_LABEL[state]}
             </span>
-            {(state === 'listed' ? current.listing?.price_cents : state === 'awaiting' ? current.pending?.price_cents : null) != null && (
-              <span className="mono price">
-                {formatEuro(state === 'listed' ? current.listing?.price_cents : current.pending?.price_cents)}
-              </span>
-            )}
+            {(() => {
+              // Steam's listing price, like the sell box, is what you receive; buyers pay Steam's fee on top.
+              const ask = state === 'listed' ? current.listing?.price_cents : state === 'awaiting' ? current.pending?.price_cents : null
+              return ask != null ? (
+                <span className="mono price">
+                  you get {formatEuro(ask)} · buyers see {formatEuro(steamBuyerPriceFromSeller(ask))}
+                </span>
+              ) : null
+            })()}
           </div>
 
           {state === 'awaiting' && current.pending && (
