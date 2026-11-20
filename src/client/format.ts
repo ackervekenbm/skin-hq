@@ -1,4 +1,4 @@
-import { steamNetFromBuyerPrice } from '../shared/fees'
+import { steamBuyerPriceFromSeller, steamNetFromBuyerPrice } from '../shared/fees'
 
 export interface StickerRef {
   name: string
@@ -122,7 +122,10 @@ export function centsToEuros(cents: number): string {
 
 export interface QuickPrice {
   label: string
+  /** The ask: what you type and what you receive. */
   cents: number
+  /** What buyers will see for that ask, Steam's fee included. */
+  buyerCents: number
   title: string
 }
 
@@ -133,11 +136,21 @@ export interface QuickPrice {
  * pays, but the sell box takes what the *seller* asks — and Steam adds ~15% on
  * top of the ask. Typing the floor straight into the box would put you above
  * everyone instead of on the floor, so each chip converts through the same fee
- * math the server uses and returns the ask that lands on that buyer price.
+ * math the server uses and returns the ask that lands on that buyer price,
+ * with the buyer price it really lands on (not every buyer price is reachable).
  */
 export function quickPrices(steam: GridPrice | null | undefined): QuickPrice[] {
   if (!steam || steam.provider !== 'steam') return []
   const chips: QuickPrice[] = []
+  const add = (label: string, ask: number, reference: string) => {
+    const buyerCents = steamBuyerPriceFromSeller(ask)
+    chips.push({
+      label,
+      cents: ask,
+      buyerCents,
+      title: `${reference}. You receive ${formatEuro(ask)}; buyers see ${formatEuro(buyerCents)} with Steam's fee.`,
+    })
+  }
   const askFor = (buyerCents: number | null | undefined): number | null => {
     if (buyerCents == null || buyerCents <= 0) return null
     const ask = steamNetFromBuyerPrice(buyerCents)
@@ -146,34 +159,14 @@ export function quickPrices(steam: GridPrice | null | undefined): QuickPrice[] {
 
   const floorAsk = askFor(steam.lowest_cents)
   if (floorAsk != null) {
-    chips.push({
-      label: 'Match floor',
-      cents: floorAsk,
-      title: `Cheapest ask that still sits at the €${centsToEuros(steam.lowest_cents ?? 0)} floor`,
-    })
-    chips.push({
-      label: 'Undercut',
-      cents: Math.max(1, floorAsk - 1),
-      title: 'One cent under the floor, so you are the cheapest seller',
-    })
+    add('Match floor', floorAsk, `Floor is ${formatEuro(steam.lowest_cents)}`)
+    add('Undercut', Math.max(1, floorAsk - 1), `One cent under the ${formatEuro(steam.lowest_cents)} floor`)
   }
 
   const medianAsk = askFor(steam.median_cents)
-  if (medianAsk != null) {
-    chips.push({
-      label: 'At median',
-      cents: medianAsk,
-      title: `Ask that lands on the €${centsToEuros(steam.median_cents ?? 0)} 24h median`,
-    })
-  }
+  if (medianAsk != null) add('At median', medianAsk, `24h median is ${formatEuro(steam.median_cents)}`)
 
   const buyAsk = askFor(steam.highest_buy_cents)
-  if (buyAsk != null) {
-    chips.push({
-      label: 'At top buy',
-      cents: buyAsk,
-      title: `Ask that lands on the €${centsToEuros(steam.highest_buy_cents ?? 0)} best standing buy order`,
-    })
-  }
+  if (buyAsk != null) add('At top buy', buyAsk, `Best standing buy order is ${formatEuro(steam.highest_buy_cents)}`)
   return chips
 }

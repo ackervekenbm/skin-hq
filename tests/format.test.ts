@@ -227,6 +227,15 @@ describe('quickPrices', () => {
     expect(steamBuyerPriceFromSeller(byLabel.get('At top buy')!)).toBe(1100)
   })
 
+  it('says on each chip what buyers will see, which is not always the reference itself', () => {
+    for (const chip of quickPrices(steam())) expect(chip.buyerCents).toBe(steamBuyerPriceFromSeller(chip.cents))
+    // No ask lands exactly on a €0.22 floor: the closest one sits just under it,
+    // and the chip has to say so rather than claim €0.22.
+    const [match] = quickPrices(steam({ lowest_cents: 22, median_cents: null, highest_buy_cents: null }))
+    expect(match.buyerCents).toBe(21)
+    expect(match.title).toBe(`Floor is €0.22. You receive €${(match.cents / 100).toFixed(2)}; buyers see €${(match.buyerCents / 100).toFixed(2)} with Steam's fee.`)
+  })
+
   it('undercuts the floor by exactly one cent', () => {
     const chips = quickPrices(steam())
     const floor = chips.find((c) => c.label === 'Match floor')!.cents

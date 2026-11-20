@@ -17,6 +17,7 @@ import {
   type StickerRef,
 } from './format'
 import { filterItems, STATUS_FILTERS, type StatusFilter } from './filter'
+import { steamBuyerPriceFromSeller } from '../shared/fees'
 import { groupByRarity, type RarityGroup } from './grouping'
 import { canCancel, canSell, itemState, ITEM_STATE_LABEL, resolvedSells, type PendingView } from './itemState'
 
@@ -802,6 +803,7 @@ export default function App() {
     const state = itemState(current)
     const sellable = canSell(current)
     const chips = quickPrices(current.prices.steam)
+    const typedAsk = eurosToCents(sellPrices[current.assetid] ?? '')
     const wear = wearOf(item.market_hash_name)
     const st = isStatTrak(item.name, item.market_hash_name)
     const isCharm = /^charm \|/i.test(item.name) || /^charm \|/i.test(item.market_hash_name)
@@ -969,7 +971,7 @@ export default function App() {
 
           {sellable && chips.length > 0 && (
             <div className="quick-prices">
-              <span className="quick-prices-label">Quick ask</span>
+              <span className="quick-prices-label">Quick ask · you get / buyers see</span>
               {chips.map((chip) => (
                 <button
                   key={chip.label}
@@ -985,6 +987,9 @@ export default function App() {
                 >
                   {chip.label}
                   <span className="quick-price-value">{formatEuro(chip.cents)}</span>
+                  <span className="quick-price-buyer" aria-label={`buyers see ${formatEuro(chip.buyerCents)}`}>
+                    / {formatEuro(chip.buyerCents)}
+                  </span>
                 </button>
               ))}
             </div>
@@ -1020,7 +1025,9 @@ export default function App() {
           </div>
           {sellable && (
             <p className="footnote">
-              You type the amount you receive; Steam adds its fee on top. The quick asks above already account for it.
+              You type the amount you receive; Steam adds its fee on top
+              {typedAsk != null ? `, so buyers will see ${formatEuro(steamBuyerPriceFromSeller(typedAsk))}.` : '.'} The quick
+              asks above already account for it.
             </p>
           )}
         </div>

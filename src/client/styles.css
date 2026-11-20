@@ -1195,6 +1195,12 @@ input::placeholder {
   color: var(--accent-strong);
 }
 
+.quick-price-buyer {
+  font-family: var(--mono);
+  color: var(--muted);
+  margin-left: -2px;
+}
+
 .sell-row input {
   flex: 1;
   min-width: 0;
