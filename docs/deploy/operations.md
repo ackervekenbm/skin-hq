@@ -38,7 +38,7 @@ to the commit. A build made without the commit (a plain `npm run build`, or
 
 | What | Where |
 | --- | --- |
-| Encrypted Steam session, inventory, prices, your listings | `skin-hq.db` in the data folder (`skin-hq.db-wal` and `-shm` next to it) |
+| Encrypted Steam session, inventory, prices (the newest, plus one per day for 90 days), your listings | `skin-hq.db` in the data folder (`skin-hq.db-wal` and `-shm` next to it) |
 | Session key | Only in your environment (`.env`, OMV's Environment box, `/etc/skin-hq.env`) |
 | Steam password | Nowhere: it is sent to Steam once at sign-in and never stored |
 

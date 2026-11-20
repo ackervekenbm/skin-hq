@@ -251,6 +251,25 @@ export function insertPriceSnapshot(input: PriceSnapshotInput): void {
   )
 }
 
+export const SNAPSHOT_HISTORY_DAYS = 90
+
+// Keeps the newest snapshot per item and provider (what the grid shows) plus
+// the last one of each day for SNAPSHOT_HISTORY_DAYS (price history), and
+// deletes the rest. Returns how many rows went.
+export function prunePriceSnapshots(now = new Date()): number {
+  const cutoff = new Date(now.getTime() - SNAPSHOT_HISTORY_DAYS * 86_400_000).toISOString()
+  return db
+    .prepare(
+      `DELETE FROM price_snapshots WHERE id NOT IN (
+         SELECT MAX(id) FROM price_snapshots GROUP BY market_hash_name, provider
+         UNION
+         SELECT MAX(id) FROM price_snapshots WHERE fetched_at >= ?
+           GROUP BY market_hash_name, provider, substr(fetched_at, 1, 10)
+       )`,
+    )
+    .run(cutoff).changes
+}
+
 export function latestPriceSnapshots(): { byItem: Map<string, Map<string, PriceSnapshotRow>>; latestAt: string | null } {
   const rows = db
     .prepare(

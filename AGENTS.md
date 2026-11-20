@@ -99,7 +99,9 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
   container (`HOST` env).
 - `src/server/db.ts` — better-sqlite3 in `data/skin-hq.db` (`DATA_DIR` env).
   Tables: `sessions` (encrypted Steam cookies), plus `items` /
-  `price_snapshots` / `my_listings` as Phase 1 lands.
+  `price_snapshots` / `my_listings` / `pending_listings`. `price_snapshots`
+  is pruned after each price phase (`prunePriceSnapshots`): the newest row per
+  item+provider plus the last row of each day for 90 days.
 - `src/server/steam.ts` — `steamcommunity` singleton. `login()` with a Steam
   Guard code entered in the UI; `setCookies()` to restore a stored session.
   Raw market POST/GETs (`sellitem`, `removelisting`, `mylistings`, price

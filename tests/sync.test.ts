@@ -3,6 +3,7 @@ import type { ItemRow, MyListingRow, PendingListingRow, PriceSnapshotRow } from 
 
 const dbMock = vi.hoisted(() => ({
   insertPriceSnapshot: vi.fn(),
+  prunePriceSnapshots: vi.fn(() => 0),
   latestPriceSnapshots: vi.fn(() => ({ byItem: new Map(), latestAt: null })),
   listItems: vi.fn(() => [] as ItemRow[]),
   listMyListings: vi.fn(() => [] as MyListingRow[]),
