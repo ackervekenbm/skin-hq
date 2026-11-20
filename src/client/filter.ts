@@ -45,13 +45,18 @@ function matchesStatus(item: FilterableItem, status: StatusFilter): boolean {
   return itemState(item) === status
 }
 
-/** Items matching every word of `query` (any order, case-insensitive) and the status. */
+/** Items matching every word of `query` (any order, case-insensitive, from the start of a word) and the status. */
 export function filterItems<T extends FilterableItem>(items: readonly T[], query: string, status: StatusFilter): T[] {
-  const words = query.toLowerCase().split(/\s+/).filter(Boolean)
+  // Each word must start a word in the item ("ak" finds AK-47, not StatTrak).
+  const words = query
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((w) => new RegExp('(?:^|[^\\p{L}\\p{N}])' + w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'u'))
   return items.filter((item) => {
     if (!matchesStatus(item, status)) return false
     if (words.length === 0) return true
     const hay = haystack(item)
-    return words.every((w) => hay.includes(w))
+    return words.every((w) => w.test(hay))
   })
 }
