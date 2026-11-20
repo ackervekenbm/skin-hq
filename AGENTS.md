@@ -41,7 +41,7 @@ the **same PR** when you add, remove or rename a feature, a control or a setting
 change a command, script, port, environment variable or image tag; or change
 what is stored where. Keep its style: plain user-facing wording, no internal
 jargon. If nothing in the README is affected, say so in the PR description.
-AGENTS.md (architecture) and `docs/deployment.md` (deployment)
+AGENTS.md (architecture) and `docs/deploy/` (deployment guides)
 follow the same rule.
 
 ## Issue-first workflow (MANDATORY)
@@ -178,4 +178,4 @@ restore left there) and then drops to it with `su-exec`.
 On `main`, after the smoke job, the image is built natively per arch (amd64 +
 arm64 runners, no QEMU) and combined into the multi-arch
 `ghcr.io/ackervekenbm/skin-hq:latest` / `:<sha7>`. The deployment guide is
-`docs/deployment.md` (OpenMediaVault, plain compose, settings, HTTPS).
+`docs/deploy/README.md`, one guide per route plus HTTPS, operations and troubleshooting.

@@ -45,25 +45,29 @@ time.
 > password is never persisted — only the resulting session cookies, encrypted
 > with a key you supply via `SKINHQ_SESSION_KEY`.
 
-## Run it in Docker
+## Deployment
 
-CI publishes a public, secrets-free image for amd64 and arm64:
-`ghcr.io/ackervekenbm/skin-hq`. The server doesn't need this repo: copy
-`docker-compose.yml` and `.env.example` (as `.env`, with a key from
-`openssl rand -hex 32` in `SKINHQ_SESSION_KEY`), then:
+SkinHQ is **one Node process**: it serves the app, the API and the background
+sync, and runs anywhere Docker or Node 22+ does, on a 64-bit OS.
 
-```bash
-docker compose up -d          # pulls the image and runs it
-```
+| Route | Good for |
+| --- | --- |
+| [Prebuilt Docker image](docs/deploy/docker-image.md) | Anything with Docker: `amd64`/`arm64`, no build, easy updates and rollback |
+| [OpenMediaVault](docs/deploy/openmediavault.md) | The OMV Compose plugin, all from the web UI |
+| [Docker, built from a checkout](docs/deploy/from-source-docker.md) | Running a version you changed yourself |
+| [Bare Node](docs/deploy/from-source-node.md) | A host that already runs Node 22+ (systemd) |
 
-Open <http://localhost:8090>. Your Steam session and the price cache live in
-the Docker volume `skin-hq-data`, so updates
-(`docker compose pull && docker compose up -d`) keep them. The app has no
-login of its own: keep it on your home network.
+Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
+**[docs/deploy/](docs/deploy/README.md)**. Three rules apply to every route:
 
-The full guide, with OpenMediaVault, every setting, updating and rolling
-back, backups, HTTPS and troubleshooting, is
-[docs/deployment.md](docs/deployment.md).
+- **Keep it on your LAN or tailnet.** SkinHQ has no login and holds your
+  signed-in Steam session, so anyone who can open it can sell your items
+  ([why](docs/deploy/README.md#keep-it-on-your-lan-or-tailnet)).
+- **Keep `SKINHQ_SESSION_KEY`** (make one with `openssl rand -hex 32`). It
+  encrypts the stored Steam session; lose it and you sign in again.
+- **Keep the data folder** (`/app/data` in the image). It holds the session
+  and the cache; updates keep it as long as the new container uses the same
+  folder or volume.
 
 ## Scripts
 
@@ -84,7 +88,7 @@ back, backups, HTTPS and troubleshooting, is
 ├── eslint.config.js / tsconfig.json / tsconfig.server.json / vite.config.ts
 ├── index.html                     # app shell
 ├── docs/plan.md                   # living plan — updated as the app evolves
-├── docs/deployment.md             # running it on a server (OMV, compose, HTTPS)
+├── docs/deploy/                   # deployment guides, one per route (image, OMV, source, Node) + HTTPS, operations, troubleshooting
 └── src/
     ├── server/                    # Express + SQLite + Steam session + price providers
     │   ├── index.ts               # bootstrap + routes
