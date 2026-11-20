@@ -10,6 +10,8 @@ services:
     environment:
       SKINHQ_SESSION_KEY: ${SKINHQ_SESSION_KEY:?set SKINHQ_SESSION_KEY in .env}
       CSFLOAT_API_KEY: ${CSFLOAT_API_KEY:-}
+      # Host names besides localhost/IPs that you open it through (reverse proxy, .local name).
+      SKINHQ_ALLOWED_HOSTS: ${SKINHQ_ALLOWED_HOSTS:-}
       # Auto-sync cadence in minutes; 0 disables (manual "Sync now" only).
       SYNC_INTERVAL_MIN: ${SYNC_INTERVAL_MIN:-60}
     volumes:

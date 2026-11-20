@@ -8,9 +8,17 @@ import { listItems } from './db'
 import { clearPendingSell, forgetListing, markPendingSell, refreshListings } from './listings'
 import { buildGrid, startAutoSync, sync } from './sync'
 import { buildCompare } from './compare'
-import { isCrossSiteWrite, isSteamId } from './guard'
+import { isAllowedHost, isCrossSiteWrite, isSteamId, parseAllowedHosts } from './guard'
 
 const app = express()
+const allowedHosts = parseAllowedHosts(process.env.SKINHQ_ALLOWED_HOSTS)
+app.use((req, res, next) => {
+  if (!isAllowedHost(req.get('host'), allowedHosts)) {
+    res.status(421).type('text').send('Unknown host name. Add it to SKINHQ_ALLOWED_HOSTS to open SkinHQ through it.')
+    return
+  }
+  next()
+})
 app.use('/api', (req, res, next) => {
   if (isCrossSiteWrite(req.method, (name) => req.get(name))) {
     res.status(403).json({ error: 'Cross-site or non-JSON write refused' })
