@@ -83,6 +83,30 @@ describe('upsertItems', () => {
     expect(db.getItem('A1')?.own_float).toBe(0.0312)
   })
 
+  // Stickers follow the same rule as floats: a pass that read the item's
+  // certificate always sends a JSON payload (an empty list when nothing is
+  // attached), so null only ever means "not read this time".
+  it('replaces stickers when they change, including when they are scraped off', () => {
+    const two = JSON.stringify({ stickers: [{ stickerId: 1, slot: 0 }, { stickerId: 2, slot: 1 }] })
+    const one = JSON.stringify({ stickers: [{ stickerId: 2, slot: 1 }] })
+    const none = JSON.stringify({ stickers: [] })
+    db.upsertItems([item({ own_float: 0.2, own_stickers: two })])
+    db.upsertItems([item({ own_float: 0.2, own_stickers: one })])
+    expect(db.getItem('A1')?.own_stickers).toBe(one)
+    db.upsertItems([item({ own_float: 0.2, own_stickers: none })])
+    expect(db.getItem('A1')?.own_stickers).toBe(none)
+  })
+
+  it('keeps stickers through a pass that could not read them, and a charm added later replaces them', () => {
+    const sticker = JSON.stringify({ stickers: [{ stickerId: 1, slot: 0 }] })
+    db.upsertItems([item({ own_float: 0.2, own_stickers: sticker })])
+    db.upsertItems([item({ own_float: null, own_stickers: null })])
+    expect(db.getItem('A1')?.own_stickers).toBe(sticker)
+    const withCharm = JSON.stringify({ stickers: [{ stickerId: 1, slot: 0 }], keychains: [{ stickerId: 9, slot: 0, pattern: 4 }] })
+    db.upsertItems([item({ own_float: 0.2, own_stickers: withCharm })])
+    expect(db.getItem('A1')?.own_stickers).toBe(withCharm)
+  })
+
   it('treats a real float of zero as a value, not as missing', () => {
     db.upsertItems([item({ own_float: 0.1234 })])
     db.upsertItems([item({ own_float: 0 })])
