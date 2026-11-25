@@ -173,6 +173,9 @@ gh issue create --title "<what>" --body "..."   # → gives an issue number
 
 ## Dependencies / Dependabot
 
+- Every `updates:` entry in `.github/dependabot.yml` assigns its PRs to
+  `ackervekenbm` (`assignees`), so each Dependabot PR notifies the maintainer.
+  Keep it on any entry you add.
 - Dependabot majors stay **enabled** — do not add `ignore` rules without the
   maintainer asking. One exception: the Docker base image is pinned by digest
   and Dependabot keeps it patched, but Node majors are a deliberate move, so
