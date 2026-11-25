@@ -2,6 +2,8 @@ version: 2
 updates:
   - package-ecosystem: npm
     directory: /
+    assignees:
+      - ackervekenbm
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
@@ -19,6 +21,8 @@ updates:
           - 'version-update:semver-major'
   - package-ecosystem: github-actions
     directory: /
+    assignees:
+      - ackervekenbm
     schedule:
       interval: weekly
     open-pull-requests-limit: 3
@@ -26,6 +30,8 @@ updates:
   # Majors (Node 24) are a deliberate move, not a weekly bump.
   - package-ecosystem: docker
     directory: /
+    assignees:
+      - ackervekenbm
     schedule:
       interval: weekly
     open-pull-requests-limit: 2
