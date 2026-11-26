@@ -33,6 +33,13 @@ is required to merge. Every PR also runs the **smoke** job
 that the app runs as `node`, takes over a root-owned data volume (without
 following a planted symlink) and works with `--user 1000:1000`.
 
+## Working docs stay out of the repo
+
+Plans, specs, design mockups and screenshots are working documents: write them
+locally (`docs/plan.md`, `docs/superpowers/` and `.superpowers/` are
+git-ignored) or in the issue/PR, never commit them. What outlives the work goes
+into the README, this file or `docs/deploy/`; planned work is tracked in issues.
+
 ## README upkeep (MANDATORY)
 
 `README.md` is the project's public front page, so it has to match the app.
