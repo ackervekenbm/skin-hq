@@ -103,7 +103,6 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
 ├── index.html                     # app shell
 ├── public/                        # favicon, home-screen icons, web app manifest
 ├── scripts/gen-icons.mjs          # renders the icons (`npm run icons`)
-├── docs/plan.md                   # living plan — updated as the app evolves
 ├── docs/deploy/                   # deployment guides, one per route (image, OMV, source, Node) + HTTPS, operations, troubleshooting
 └── src/
     ├── server/                    # Express + SQLite + Steam session + price providers
@@ -152,4 +151,4 @@ Settings, HTTPS, backups, updates, rollback and troubleshooting are all in
 
 This README is part of the repo and is kept in sync as the app evolves —
 when features, commands, or structure change, this file is updated to match.
-The roadmap (what's planned vs. shipped) lives in `docs/plan.md`.
+Planned work is tracked in the GitHub issues.
